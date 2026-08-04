@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, image, row, scrollable, text};
+use iced::widget::{button, column, container, image, row, scrollable, text, text_input};
 use iced::{Alignment, Color, Element, Length};
 use crate::app::messages::Message;
 use crate::models::session::{PageLayout, SidePanelTab};
@@ -24,6 +24,26 @@ fn control_button_style(_theme: &iced::Theme, status: button::Status) -> button:
     }
 }
 
+fn page_input_style(_theme: &iced::Theme, status: text_input::Status) -> text_input::Style {
+    let border_color = match status {
+        text_input::Status::Focused => Color::from_rgb(0.38, 0.58, 0.92),
+        text_input::Status::Hovered => Color::from_rgb(0.40, 0.45, 0.55),
+        _ => Color::from_rgb(0.28, 0.30, 0.36),
+    };
+    text_input::Style {
+        background: Color::from_rgb(0.18, 0.19, 0.23).into(),
+        border: iced::Border {
+            color: border_color,
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        icon: Color::TRANSPARENT,
+        placeholder: Color::from_rgb(0.50, 0.50, 0.50),
+        value: Color::from_rgb(0.95, 0.95, 0.98),
+        selection: Color::from_rgb(0.25, 0.35, 0.55),
+    }
+}
+
 pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let tab_id = tab.id;
     let label_color = Color::from_rgb(0.90, 0.92, 0.96);
@@ -34,9 +54,23 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         .padding([4, 10])
         .style(control_button_style);
 
-    let page_indicator = text(format!("{} / {}", tab.current_page + 1, tab.page_count.max(1)))
-        .size(13)
-        .color(label_color);
+    // Interactive Page Number Input Box
+    let page_input_field = text_input("", &tab.page_input_text)
+        .on_input(move |val| Message::PageInputChanged(tab_id, val))
+        .on_submit(Message::PageInputSubmitted(tab_id))
+        .width(Length::Fixed(44.0))
+        .padding([2, 4])
+        .align_x(Alignment::Center)
+        .style(page_input_style);
+
+    let page_indicator = row![
+        page_input_field,
+        text(format!(" / {}", tab.page_count.max(1)))
+            .size(13)
+            .color(label_color)
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
 
     let next_btn = button(text(">").size(13).color(label_color))
         .on_press(Message::ChangePage(tab_id, (tab.current_page + 1).min(tab.page_count.saturating_sub(1))))
@@ -474,7 +508,7 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             .clip(true)
             .into()
     };
-    
+
     let main_workspace = column![
         control_tray,
         canvas_area

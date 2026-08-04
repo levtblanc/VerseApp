@@ -14,6 +14,8 @@ pub enum Message {
     SplitViewRequested(usize, bool),
 
     ChangePage(usize, usize),
+    PageInputChanged(usize, String),
+    PageInputSubmitted(usize),
     ChangeZoom(usize, f32),
     TogglePageLayout(usize),
     ToggleContinuous(usize),

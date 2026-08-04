@@ -3,7 +3,7 @@ use iced::window;
 use iced::Task;
 use rfd::AsyncFileDialog;
 
-use crate::app::actions::key_to_string;
+use crate::app::actions::{is_modifier_key, key_to_string};
 use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
 use crate::engine::load_document;
@@ -17,6 +17,68 @@ impl ReaderApp {
             Message::ClearError => {
                 self.error_message = None;
                 Task::none()
+            }
+
+            Message::PageInputChanged(tab_id, value) => {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                    tab.page_input_text = value;
+                }
+                Task::none()
+            }
+
+            Message::PageInputSubmitted(tab_id) => {
+                let (valid_page, target_y, is_continuous) = if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                    let page_count = tab.page_count;
+                    if page_count == 0 {
+                        tab.page_input_text = "1".to_string();
+                        return Task::none();
+                    }
+
+                    // Parse & clamp input safely
+                    let target_page = match tab.page_input_text.trim().parse::<usize>() {
+                        Ok(parsed) => parsed.saturating_sub(1).min(page_count.saturating_sub(1)),
+                        Err(_) => tab.current_page, // Safely fallback on invalid text
+                    };
+
+                    tab.current_page = target_page;
+                    tab.page_input_text = (target_page + 1).to_string();
+                    let y_off = tab.y_offset_for_page(target_page);
+                    (target_page, y_off, tab.is_continuous)
+                } else {
+                    return Task::none();
+                };
+
+                self.save_session();
+                let mut tasks = vec![self.request_missing_page_renders(tab_id)];
+
+                let side_info = self.tabs.iter().find(|t| t.id == tab_id)
+                    .map(|t| (t.is_side_panel_open, t.side_panel_tab));
+
+                if let Some((side_open, side_tab)) = side_info {
+                    if side_open && side_tab == SidePanelTab::Thumbnails {
+                        tasks.push(self.request_missing_thumbnail_renders(tab_id));
+
+                        let side_thumb_y = valid_page as f32 * 208.0;
+                        tasks.push(scrollable::scroll_to(
+                            scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)),
+                            scrollable::AbsoluteOffset { x: 0.0, y: side_thumb_y },
+                        ));
+                    }
+                }
+
+                if is_continuous {
+                    tasks.push(scrollable::scroll_to(
+                        scrollable::Id::new(format!("viewer_scroll_{}", tab_id)),
+                        scrollable::AbsoluteOffset { x: 0.0, y: target_y },
+                    ));
+                } else {
+                    tasks.push(scrollable::scroll_to(
+                        scrollable::Id::new(format!("viewer_scroll_{}", tab_id)),
+                        scrollable::AbsoluteOffset { x: 0.0, y: 0.0 },
+                    ));
+                }
+
+                Task::batch(tasks)
             }
 
             Message::ToggleSidePanel(tab_id) => {
@@ -38,7 +100,6 @@ impl ReaderApp {
                     }
 
                     if is_open {
-                        // Auto-scroll side panel to the current page's thumbnail
                         let side_thumb_y = current_page as f32 * 208.0;
                         tasks.push(scrollable::scroll_to(
                             scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)),
@@ -56,20 +117,9 @@ impl ReaderApp {
             }
 
             Message::ToggleSidePanelPin(tab_id) => {
-                let tab_info = self.tabs.iter_mut().find(|t| t.id == tab_id).map(|tab| {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                     tab.is_side_panel_pinned = !tab.is_side_panel_pinned;
-                    let target_y = tab.y_offset_for_page(tab.current_page);
-                    (tab.is_continuous, target_y)
-                });
-
-                if let Some((is_continuous, target_y)) = tab_info {
                     self.save_session();
-                    if is_continuous {
-                        return scrollable::scroll_to(
-                            scrollable::Id::new(format!("viewer_scroll_{}", tab_id)),
-                            scrollable::AbsoluteOffset { x: 0.0, y: target_y },
-                        );
-                    }
                 }
                 Task::none()
             }
@@ -87,7 +137,6 @@ impl ReaderApp {
                     if side_tab == SidePanelTab::Thumbnails {
                         tasks.push(self.request_missing_thumbnail_renders(tab_id));
 
-                        // Auto-scroll side panel to current page thumbnail on sub-tab switch
                         let side_thumb_y = current_page as f32 * 208.0;
                         tasks.push(scrollable::scroll_to(
                             scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)),
@@ -213,14 +262,27 @@ impl ReaderApp {
                     iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
                         self.active_modifiers = modifiers;
                     }
-                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                        let key_str = key_to_string(&key);
+                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        let ctrl = modifiers.control() || self.active_modifiers.control();
+                        let shift = modifiers.shift() || self.active_modifiers.shift();
+                        let alt = modifiers.alt() || self.active_modifiers.alt();
+
                         if let Some(action_to_remap) = self.remapping_action {
+                            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
+                                self.remapping_action = None;
+                                return Task::none();
+                            }
+
+                            if is_modifier_key(&key) {
+                                return Task::none();
+                            }
+
+                            let key_str = key_to_string(&key);
                             let new_binding = KeyBinding {
                                 key: key_str,
-                                ctrl: self.active_modifiers.control(),
-                                shift: self.active_modifiers.shift(),
-                                alt: self.active_modifiers.alt(),
+                                ctrl,
+                                shift,
+                                alt,
                             };
                             self.settings.keybindings.insert(action_to_remap, new_binding);
                             self.remapping_action = None;
@@ -228,11 +290,12 @@ impl ReaderApp {
                             return Task::none();
                         }
 
+                        let key_str = key_to_string(&key);
                         let matched_action = self.settings.keybindings.iter().find_map(|(action, binding)| {
                             if binding.key.eq_ignore_ascii_case(&key_str)
-                                && binding.ctrl == self.active_modifiers.control()
-                                && binding.shift == self.active_modifiers.shift()
-                                && binding.alt == self.active_modifiers.alt()
+                                && binding.ctrl == ctrl
+                                && binding.shift == shift
+                                && binding.alt == alt
                             {
                                 Some(*action)
                             } else {
@@ -273,6 +336,7 @@ impl ReaderApp {
 
                         if tab.current_page != scrolled_page {
                             tab.current_page = scrolled_page;
+                            tab.page_input_text = (scrolled_page + 1).to_string(); // Keep input in sync
                             true
                         } else {
                             false
@@ -367,6 +431,7 @@ impl ReaderApp {
             Message::ChangePage(tab_id, new_page) => {
                 let tab_info = self.tabs.iter_mut().find(|t| t.id == tab_id).map(|tab| {
                     tab.current_page = new_page;
+                    tab.page_input_text = (new_page + 1).to_string(); // Keep input in sync
                     let target_y = tab.y_offset_for_page(new_page);
                     (tab.is_continuous, tab.layout, tab.zoom, tab.is_side_panel_open, tab.side_panel_tab, target_y)
                 });

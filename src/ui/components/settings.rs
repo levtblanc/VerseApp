@@ -7,9 +7,9 @@ use crate::ui::theme::transparent_scrollable_style;
 pub fn render_settings_modal<'a>(
     settings: &'a AppSettings,
     remapping_action: Option<Action>,
+    active_modifiers: iced::keyboard::Modifiers,
     base_content: Element<'a, Message>,
 ) -> Element<'a, Message> {
-    // Theme-independent light text colors for dark card background
     let text_primary = Color::from_rgb(0.95, 0.95, 0.98);
     let text_secondary = Color::from_rgb(0.70, 0.73, 0.80);
 
@@ -108,8 +108,18 @@ pub fn render_settings_modal<'a>(
     for action in key_actions {
         if let Some(binding) = settings.keybindings.get(&action) {
             let action_name = text(action.display_name()).size(13).color(text_primary);
+
             let binding_text = if remapping_action == Some(action) {
-                "Press new key...".to_string()
+                let mut parts = Vec::new();
+                if active_modifiers.control() { parts.push("Ctrl"); }
+                if active_modifiers.alt() { parts.push("Alt"); }
+                if active_modifiers.shift() { parts.push("Shift"); }
+
+                if parts.is_empty() {
+                    "Press key combo...".to_string()
+                } else {
+                    format!("{} + ...", parts.join(" + "))
+                }
             } else {
                 binding.to_display_string()
             };

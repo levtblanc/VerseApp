@@ -6,7 +6,7 @@ use crate::engine::traits::{DocumentBackend, RenderQuality, TocItem};
 use crate::models::session::{PageLayout, SidePanelTab};
 
 const MAX_THUMBNAIL_CACHE_SIZE: usize = 150;
-const TAB_TEXTURE_RAM_BUDGET_BYTES: usize = 60 * 1024 * 1024; // 60 MB budget for continuous prefetching
+const TAB_TEXTURE_RAM_BUDGET_BYTES: usize = 60 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct CachedTexture {
@@ -33,6 +33,7 @@ pub struct RuntimeTab {
     pub toc: Vec<TocItem>,
 
     pub current_page: usize,
+    pub page_input_text: String, // Input text state for page navigation
     pub zoom: f32,
 
     pub layout: PageLayout,
@@ -69,6 +70,7 @@ impl RuntimeTab {
     ) -> Self {
         let page_count = backend.page_count();
         let toc = backend.table_of_contents();
+        let page_input_text = (current_page + 1).to_string();
 
         Self {
             id,
@@ -78,6 +80,7 @@ impl RuntimeTab {
             page_count,
             toc,
             current_page,
+            page_input_text,
             zoom,
             layout,
             is_continuous,
@@ -94,7 +97,6 @@ impl RuntimeTab {
         }
     }
 
-    /// Calculates the exact page index visible at a given vertical pixel offset
     pub fn page_at_y_offset(&self, offset_y: f32) -> usize {
         if self.page_count == 0 {
             return 0;
@@ -137,7 +139,6 @@ impl RuntimeTab {
         }
     }
 
-    /// Calculates the exact pixel Y-coordinate required to scroll to a specific page
     pub fn y_offset_for_page(&self, page_index: usize) -> f32 {
         if self.page_count == 0 {
             return 0.0;
@@ -265,7 +266,6 @@ impl RuntimeTab {
         let mut requests = Vec::new();
 
         if self.is_continuous {
-            // Predictive forward prefetching: 3 pages behind, 8 pages ahead
             let start = self.current_page.saturating_sub(3);
             let end = (self.current_page + 9).min(total);
 

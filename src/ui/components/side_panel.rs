@@ -8,9 +8,13 @@ use crate::ui::theme::transparent_scrollable_style;
 
 pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let tab_id = tab.id;
-    let side_scrollbar = scrollable::Scrollbar::default().scroller_width(8.0);
+    let text_color = Color::from_rgb(0.90, 0.92, 0.96);
+    let side_scrollbar = scrollable::Scrollbar::default()
+        .width(12.0)
+        .scroller_width(12.0)
+        .margin(2.0);
 
-    let toc_tab_btn = button(text("Outline").size(12))
+    let toc_tab_btn = button(text("Outline").size(12).color(text_color))
         .on_press(Message::SetSidePanelTab(tab_id, SidePanelTab::TableOfContents))
         .padding([5.0, 10.0])
         .style(move |_theme, status| {
@@ -24,13 +28,13 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             };
             button::Style {
                 background: Some(bg.into()),
-                text_color: Color::from_rgb(0.9, 0.92, 0.95),
+                text_color: Color::from_rgb(0.90, 0.92, 0.96),
                 border: iced::Border { radius: 6.0.into(), ..Default::default() },
                 ..Default::default()
             }
         });
 
-    let thumb_tab_btn = button(text("Thumbnails").size(12))
+    let thumb_tab_btn = button(text("Thumbnails").size(12).color(text_color))
         .on_press(Message::SetSidePanelTab(tab_id, SidePanelTab::Thumbnails))
         .padding([5.0, 10.0])
         .style(move |_theme, status| {
@@ -44,7 +48,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             };
             button::Style {
                 background: Some(bg.into()),
-                text_color: Color::from_rgb(0.9, 0.92, 0.95),
+                text_color: Color::from_rgb(0.90, 0.92, 0.96),
                 border: iced::Border { radius: 6.0.into(), ..Default::default() },
                 ..Default::default()
             }
@@ -57,7 +61,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let panel_body: Element<Message> = match tab.side_panel_tab {
         SidePanelTab::TableOfContents => {
             if tab.toc.is_empty() {
-                container(text("No outline / Table of Contents found.").size(12))
+                container(text("No outline / Table of Contents found.").size(12).color(text_color))
                     .padding(15)
                     .width(Length::Fill)
                     .align_x(Alignment::Center)
@@ -96,7 +100,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         .height(Length::Fixed(180.0))
                         .into()
                 } else {
-                    container(text(format!("Page {}", page_idx + 1)).size(11))
+                    container(text(format!("Page {}", page_idx + 1)).size(11).color(text_color))
                         .width(Length::Fixed(140.0))
                         .height(Length::Fixed(180.0))
                         .align_x(Alignment::Center)
@@ -126,6 +130,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         };
                         button::Style {
                             background: Some(Color::TRANSPARENT.into()),
+                            text_color: Color::from_rgb(0.90, 0.92, 0.96),
                             border: iced::Border {
                                 color: border_color,
                                 width: if is_current { 2.0 } else { 1.0 },
@@ -135,7 +140,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         }
                     });
 
-                let label = text(format!("Page {}", page_idx + 1)).size(11);
+                let label = text(format!("Page {}", page_idx + 1)).size(11).color(text_color);
                 thumb_col = thumb_col.push(column![thumb_btn, label].spacing(4).align_x(Alignment::Center));
             }
 
@@ -170,8 +175,9 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
 fn render_toc_item<'a>(item: &'a TocItem, tab_id: usize, depth: usize) -> Element<'a, Message> {
     let target_page = item.page_index;
     let title_text = item.title.clone();
+    let text_color = Color::from_rgb(0.90, 0.92, 0.96);
 
-    let btn = button(text(title_text).size(12))
+    let btn = button(text(title_text).size(12).color(text_color))
         .on_press(Message::ChangePage(tab_id, target_page))
         .padding([4.0, 8.0])
         .style(|_theme, status| {
@@ -181,7 +187,7 @@ fn render_toc_item<'a>(item: &'a TocItem, tab_id: usize, depth: usize) -> Elemen
             };
             button::Style {
                 background: Some(bg.into()),
-                text_color: Color::from_rgb(0.9, 0.92, 0.95),
+                text_color: Color::from_rgb(0.90, 0.92, 0.96),
                 border: iced::Border { radius: 4.0.into(), ..Default::default() },
                 ..Default::default()
             }

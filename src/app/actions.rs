@@ -4,6 +4,30 @@ use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
 use crate::models::session::{Action, PageLayout};
 
+pub fn is_modifier_key(key: &keyboard::Key) -> bool {
+    match key {
+        keyboard::Key::Named(named) => matches!(
+            named,
+            keyboard::key::Named::Control
+                | keyboard::key::Named::Shift
+                | keyboard::key::Named::Alt
+                | keyboard::key::Named::Meta
+                | keyboard::key::Named::Super
+                | keyboard::key::Named::Hyper
+                | keyboard::key::Named::AltGraph
+        ),
+        keyboard::Key::Character(c) => {
+            let s = c.as_str();
+            s.eq_ignore_ascii_case("control")
+                || s.eq_ignore_ascii_case("shift")
+                || s.eq_ignore_ascii_case("alt")
+                || s.eq_ignore_ascii_case("meta")
+                || s.eq_ignore_ascii_case("super")
+        }
+        _ => false,
+    }
+}
+
 pub fn key_to_string(key: &keyboard::Key) -> String {
     match key {
         keyboard::Key::Named(named) => match named {
@@ -97,15 +121,21 @@ impl ReaderApp {
                 }
             }
             Action::TogglePageLayout => {
-                if let Some(tab_id) = self.active_tab_id { return self.update(Message::TogglePageLayout(tab_id)); }
+                if let Some(tab_id) = self.active_tab_id {
+                    return self.update(Message::TogglePageLayout(tab_id));
+                }
             }
             Action::ToggleContinuous => {
-                if let Some(tab_id) = self.active_tab_id { return self.update(Message::ToggleContinuous(tab_id)); }
+                if let Some(tab_id) = self.active_tab_id {
+                    return self.update(Message::ToggleContinuous(tab_id));
+                }
             }
             Action::ToggleTheme => return self.update(Message::ToggleTheme),
             Action::OpenSettings => return self.update(Message::OpenSettings),
             Action::CloseActiveTab => {
-                if let Some(tab_id) = self.active_tab_id { return self.update(Message::CloseTab(tab_id)); }
+                if let Some(tab_id) = self.active_tab_id {
+                    return self.update(Message::CloseTab(tab_id));
+                }
             }
         }
         Task::none()

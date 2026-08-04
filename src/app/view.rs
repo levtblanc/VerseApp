@@ -102,7 +102,7 @@ impl ReaderApp {
             .padding(iced::Padding {
                 top: 8.0,
                 right: 10.0,
-                bottom: 0.0,
+                bottom: 2.0,
                 left: 10.0,
             })
             .align_y(iced::Alignment::Center);
@@ -113,7 +113,7 @@ impl ReaderApp {
         };
 
         if self.is_settings_open {
-            render_settings_modal(&self.settings, self.remapping_action, base_layout)
+            render_settings_modal(&self.settings, self.remapping_action, self.active_modifiers, base_layout)
         } else {
             base_layout
         }
