@@ -2,7 +2,7 @@ use iced::widget::{button, container, row, scrollable, text};
 use iced::{Alignment, Color, Element, Length};
 use crate::app::messages::Message;
 use crate::models::workspace::RuntimeTab;
-use crate::ui::theme::transparent_scrollable_style;
+use crate::ui::theme::invisible_scrollable_style;
 
 pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'a, Message> {
     let mut tab_row = row![].spacing(6).align_y(Alignment::Center);
@@ -107,9 +107,10 @@ pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'
 
     tab_row = tab_row.push(new_tab_btn);
 
+    // Scrollable tab strip with 100% invisible scrollbar styling
     let scrollable_tab_strip = scrollable(tab_row)
         .direction(scrollable::Direction::Horizontal(scrollable::Scrollbar::default()))
-        .style(transparent_scrollable_style)
+        .style(invisible_scrollable_style)
         .height(Length::Shrink);
 
     container(scrollable_tab_strip)

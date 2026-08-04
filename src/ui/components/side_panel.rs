@@ -4,11 +4,13 @@ use crate::app::messages::Message;
 use crate::engine::traits::TocItem;
 use crate::models::session::SidePanelTab;
 use crate::models::workspace::RuntimeTab;
+use crate::ui::theme::transparent_scrollable_style;
 
 pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let tab_id = tab.id;
+    let side_scrollbar = scrollable::Scrollbar::default().scroller_width(8.0);
 
-    let toc_tab_btn = button(text("📑 Outline").size(12))
+    let toc_tab_btn = button(text("Outline").size(12))
         .on_press(Message::SetSidePanelTab(tab_id, SidePanelTab::TableOfContents))
         .padding([5.0, 10.0])
         .style(move |_theme, status| {
@@ -28,7 +30,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             }
         });
 
-    let thumb_tab_btn = button(text("🖼 Thumbnails").size(12))
+    let thumb_tab_btn = button(text("Thumbnails").size(12))
         .on_press(Message::SetSidePanelTab(tab_id, SidePanelTab::Thumbnails))
         .padding([5.0, 10.0])
         .style(move |_theme, status| {
@@ -71,6 +73,8 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                 }
 
                 scrollable(toc_col)
+                    .direction(scrollable::Direction::Vertical(side_scrollbar))
+                    .style(transparent_scrollable_style)
                     .id(scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)))
                     .height(Length::Fill)
                     .into()
@@ -136,6 +140,8 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             }
 
             scrollable(thumb_col)
+                .direction(scrollable::Direction::Vertical(side_scrollbar))
+                .style(transparent_scrollable_style)
                 .id(scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)))
                 .height(Length::Fill)
                 .into()

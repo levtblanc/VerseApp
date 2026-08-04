@@ -6,51 +6,82 @@ use crate::models::workspace::RuntimeTab;
 use crate::ui::components::side_panel::render_side_panel;
 use crate::ui::theme::transparent_scrollable_style;
 
+fn control_button_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
+    let bg = match status {
+        button::Status::Hovered => Color::from_rgb(0.26, 0.28, 0.34),
+        button::Status::Pressed => Color::from_rgb(0.18, 0.20, 0.25),
+        _ => Color::from_rgb(0.20, 0.22, 0.26),
+    };
+    button::Style {
+        background: Some(bg.into()),
+        text_color: Color::from_rgb(0.90, 0.92, 0.96),
+        border: iced::Border {
+            color: Color::from_rgb(0.30, 0.32, 0.38),
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
 pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let tab_id = tab.id;
+    let label_color = Color::from_rgb(0.90, 0.92, 0.96);
 
     // --- Floating Control Toolbar ---
-    let prev_btn = button(text("◄").size(12))
+    let prev_btn = button(text("<").size(13).color(label_color))
         .on_press(Message::ChangePage(tab_id, tab.current_page.saturating_sub(1)))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
-    let page_indicator = text(format!("{} / {}", tab.current_page + 1, tab.page_count.max(1))).size(13);
+    let page_indicator = text(format!("{} / {}", tab.current_page + 1, tab.page_count.max(1)))
+        .size(13)
+        .color(label_color);
 
-    let next_btn = button(text("►").size(12))
+    let next_btn = button(text(">").size(13).color(label_color))
         .on_press(Message::ChangePage(tab_id, (tab.current_page + 1).min(tab.page_count.saturating_sub(1))))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
-    let zoom_out_btn = button(text("-").size(13))
+    let zoom_out_btn = button(text("-").size(13).color(label_color))
         .on_press(Message::ChangeZoom(tab_id, (tab.zoom - 0.15).max(0.2)))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
-    let zoom_pct = text(format!("{}%", (tab.zoom * 100.0) as u32)).size(13);
+    let zoom_pct = text(format!("{}%", (tab.zoom * 100.0) as u32))
+        .size(13)
+        .color(label_color);
 
-    let zoom_in_btn = button(text("+").size(13))
+    let zoom_in_btn = button(text("+").size(13).color(label_color))
         .on_press(Message::ChangeZoom(tab_id, tab.zoom + 0.15))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
     let layout_label = match tab.layout {
-        PageLayout::Single => "📄 Single",
-        PageLayout::Double => "📖 Double",
+        PageLayout::Single => "Single",
+        PageLayout::Double => "Double",
     };
-    let layout_btn = button(text(layout_label).size(12))
+    let layout_btn = button(text(layout_label).size(12).color(label_color))
         .on_press(Message::TogglePageLayout(tab_id))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
-    let continuous_label = if tab.is_continuous { "📜 Scroll" } else { "📑 Pages" };
-    let continuous_btn = button(text(continuous_label).size(12))
+    let continuous_label = if tab.is_continuous { "Continuous" } else { "Paginated" };
+    let continuous_btn = button(text(continuous_label).size(12).color(label_color))
         .on_press(Message::ToggleContinuous(tab_id))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
-    let side_panel_label = if tab.is_side_panel_open { "📂 Hide Panel" } else { "📂 Show Panel" };
-    let side_panel_btn = button(text(side_panel_label).size(12))
+    let side_panel_label = if tab.is_side_panel_open { "Panel [x]" } else { "Panel [|]" };
+    let side_panel_btn = button(text(side_panel_label).size(12).color(label_color))
         .on_press(Message::ToggleSidePanel(tab_id))
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
-    let theme_btn = button(text("🌓 Theme").size(12))
+    let theme_btn = button(text("🌓 Theme").size(12).color(label_color))
         .on_press(Message::ToggleTheme)
-        .padding([4, 8]);
+        .padding([4, 10])
+        .style(control_button_style);
 
     let toolbar = row![
         side_panel_btn,
@@ -70,14 +101,17 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let control_tray = container(toolbar)
         .padding([4, 12])
         .style(|_| container::Style {
-            background: Some(Color::from_rgb(0.16, 0.17, 0.20).into()),
+            background: Some(Color::from_rgb(0.14, 0.15, 0.18).into()),
             border: iced::Border {
-                color: Color::from_rgb(0.26, 0.28, 0.34),
+                color: Color::from_rgb(0.24, 0.26, 0.32),
                 width: 1.0,
-                radius: 6.0.into(),
+                radius: 8.0.into(),
             },
             ..Default::default()
         });
+
+    let v_scrollbar = scrollable::Scrollbar::default().scroller_width(12.0);
+    let h_scrollbar = scrollable::Scrollbar::default().scroller_width(12.0);
 
     // --- Main Document Canvas ---
     let canvas_area: Element<Message> = if tab.page_count == 0 {
@@ -87,7 +121,6 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             .into()
     } else if tab.is_continuous {
         if tab.layout == PageLayout::Double {
-            // --- DOUBLE CONTINUOUS MODE ---
             let mut rows_col = column![]
                 .spacing(12)
                 .align_x(Alignment::Center)
@@ -194,14 +227,14 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             let (dir, container_w) = if approx_pair_width > 1300.0 {
                 (
                     scrollable::Direction::Both {
-                        vertical: scrollable::Scrollbar::default(),
-                        horizontal: scrollable::Scrollbar::default(),
+                        vertical: v_scrollbar,
+                        horizontal: h_scrollbar,
                     },
                     Length::Shrink,
                 )
             } else {
                 (
-                    scrollable::Direction::Vertical(scrollable::Scrollbar::default()),
+                    scrollable::Direction::Vertical(v_scrollbar),
                     Length::Fill,
                 )
             };
@@ -280,14 +313,14 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             let (dir, container_w) = if approx_page_width > 1300.0 {
                 (
                     scrollable::Direction::Both {
-                        vertical: scrollable::Scrollbar::default(),
-                        horizontal: scrollable::Scrollbar::default(),
+                        vertical: v_scrollbar,
+                        horizontal: h_scrollbar,
                     },
                     Length::Shrink,
                 )
             } else {
                 (
-                    scrollable::Direction::Vertical(scrollable::Scrollbar::default()),
+                    scrollable::Direction::Vertical(v_scrollbar),
                     Length::Fill,
                 )
             };
@@ -412,14 +445,14 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         let (dir, container_w) = if approx_width > 1300.0 {
             (
                 scrollable::Direction::Both {
-                    vertical: scrollable::Scrollbar::default(),
-                    horizontal: scrollable::Scrollbar::default(),
+                    vertical: v_scrollbar,
+                    horizontal: h_scrollbar,
                 },
                 Length::Shrink,
             )
         } else {
             (
-                scrollable::Direction::Vertical(scrollable::Scrollbar::default()),
+                scrollable::Direction::Vertical(v_scrollbar),
                 Length::Fill,
             )
         };
@@ -441,7 +474,7 @@ pub fn render_document_viewer<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             .clip(true)
             .into()
     };
-
+    
     let main_workspace = column![
         control_tray,
         canvas_area

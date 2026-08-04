@@ -9,20 +9,57 @@ pub fn get_iced_theme(mode: &ThemeMode) -> Theme {
     }
 }
 
-pub fn transparent_scrollable_style(_theme: &Theme, status: scrollable::Status) -> scrollable::Style {
-    let scroller_alpha = match status {
-        scrollable::Status::Hovered { .. } => 0.50,
-        scrollable::Status::Dragged { .. } => 0.75,
-        _ => 0.25,
+/// Translucent Floating Scrollbar Style with High-Visibility Scroller Thumb
+pub fn transparent_scrollable_style(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
+    let palette = theme.palette();
+    let is_dark_theme = palette.background.r < 0.5;
+
+    let (scroller_alpha, border_alpha) = match status {
+        scrollable::Status::Hovered { .. } => (0.85, 0.40),
+        scrollable::Status::Dragged { .. } => (1.00, 0.60),
+        _ => (0.60, 0.25),
+    };
+
+    let scroller_color = if is_dark_theme {
+        Color::from_rgba(0.90, 0.92, 0.98, scroller_alpha)
+    } else {
+        Color::from_rgba(0.15, 0.16, 0.20, scroller_alpha)
+    };
+
+    let border_color = if is_dark_theme {
+        Color::from_rgba(1.0, 1.0, 1.0, border_alpha)
+    } else {
+        Color::from_rgba(0.0, 0.0, 0.0, border_alpha)
     };
 
     let scroller = scrollable::Scroller {
-        color: Color::from_rgba(0.9, 0.92, 0.98, scroller_alpha),
+        color: scroller_color,
         border: Border {
-            color: Color::TRANSPARENT,
-            width: 0.0,
-            radius: 4.0.into(),
+            color: border_color,
+            width: 1.0,
+            radius: 6.0.into(),
         },
+    };
+
+    let rail = scrollable::Rail {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        border: Border::default(),
+        scroller,
+    };
+
+    scrollable::Style {
+        container: iced::widget::container::Style::default(),
+        vertical_rail: rail,
+        horizontal_rail: rail,
+        gap: None,
+    }
+}
+
+/// 100% Invisible Scrollbar Style (Used for horizontal tab bar)
+pub fn invisible_scrollable_style(_theme: &Theme, _status: scrollable::Status) -> scrollable::Style {
+    let scroller = scrollable::Scroller {
+        color: Color::TRANSPARENT,
+        border: Border::default(),
     };
 
     let rail = scrollable::Rail {
