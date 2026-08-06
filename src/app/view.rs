@@ -95,7 +95,7 @@ impl ReaderApp {
 
         let base_layout: Element<Message> = if self.is_tab_bar_visible {
             let top_header = row![
-                render_tab_bar(&self.tabs, active_id),
+                render_tab_bar(&self.tabs, active_id, self.dragged_tab_id),
                 settings_btn
             ]
             .spacing(8)
@@ -112,10 +112,19 @@ impl ReaderApp {
             column![content_with_error].into()
         };
 
+        // Persistent stack root guarantees base_layout never unmounts
         if self.is_settings_open {
-            render_settings_modal(&self.settings, self.remapping_action, self.active_modifiers, base_layout)
+            iced::widget::stack![
+                base_layout,
+                iced::widget::opaque(render_settings_modal(
+                    &self.settings,
+                    self.remapping_action,
+                    self.active_modifiers
+                ))
+            ]
+            .into()
         } else {
-            base_layout
+            iced::widget::stack![base_layout].into()
         }
     }
 }

@@ -29,7 +29,6 @@ pub fn load_document(path: &Path) -> Result<Arc<dyn DocumentBackend>, String> {
             let backend = DocxBackend::open(path)?;
             Ok(Arc::new(backend))
         }
-        // PDF, EPUB, FB2, MOBI, XPS, CBZ, and universal formats handled natively by MuPDF
         _ => {
             let backend = MuPdfBackend::open(path)?;
             Ok(Arc::new(backend))

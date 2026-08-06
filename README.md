@@ -1,6 +1,6 @@
-# VerseApp
+# Verse Document Reader
 
-A high-performance, multi-format document reader written in Rust using the **Iced 0.13** framework (Elm Architecture) and the **MuPDF Fitz** C engine (`mupdf` crate) alongside native DjVu and DOCX decoders.
+A modular, high-performance, multi-format document reader written in Rust using the **Iced 0.13** GUI framework (Elm Architecture), **MuPDF Fitz** C Engine (`mupdf` crate), and native DjVu and DOCX engine pipelines.
 
 ---
 
@@ -10,119 +10,72 @@ A high-performance, multi-format document reader written in Rust using the **Ice
 
 ---
 
-## Directory Layout
+## Key Features
+
+* **Multi-Tab Workspace & Drag Reordering**: Chrome-style tab strip with horizontal mouse drag-and-drop tab shuffling ($O(1)$ memory swaps that preserve reading state), tab close auto-jumps to neighboring tabs, and soft tab persistence.
+* **Virtualized Continuous Scroll Engine**:
+  * **Zero-Lag Scrolling**: Pages outside the immediate visible window ($4$ behind, $8$ ahead) render as zero-texture blank boxes with exact pixel dimensions, keeping VRAM/RAM under $35\text{ MB}$ even on $1000$+ page documents.
+  * **Pixel-Accurate Y-Offset Tracking**: `page_at_y_offset()` and `y_offset_for_page()` calculate exact scroll positions across mixed-height page documents.
+* **Facing Pages & View Modes**: Single page, double facing pages, single continuous, and double continuous mode.
+* **Interactive Control Tray**:
+  * Floating control tray with theme-independent off-white text.
+  * **Direct Page Input Box**: Type page numbers directly and press `Enter` (auto-clamped and sanitized against invalid inputs).
+  * Dual-axis scrolling (`Direction::Both` when zoomed in beyond screen width; centered `Direction::Vertical` at normal zoom).
+* **Navigation Side Panel**:
+  * Table of Contents (Outline tree) and $210\text{ pt}$ fixed-height Thumbnail grid.
+  * **Active Thumbnail Highlight**: Active page thumbnail features a blue accent border (`#6194EA`), slate-blue container glow, and highlighted label text.
+  * **Dual-Mode Thumbnail Engine**: Renders visible side panel thumbnails dynamically in real-time ($<5\text{ ms}$ draft renders) and auto-centers the active thumbnail when turning pages in the main reader.
+* **Theme-Adaptive Floating Scrollbars**:
+  * Track background is $100\%$ transparent.
+  * Scroller thumb dynamically turns **translucent light gray in Dark Mode** and **translucent dark gray in Light Mode** for high contrast visibility across themes.
+  * Scroller thickness locked to a comfortable $12\text{ px}$.
+* **Polished Settings & Shortcut Remapping**:
+  * Glassmorphic modal overlay for customizable hotkeys and theme toggles.
+  * **Live Modifier Capture**: Displays held modifier combinations (`Ctrl + Shift + ...`) in real-time while remapping shortcuts. Press `Escape` to cancel.
+
+---
+
+## Project Directory Map
 
 ```text
 verseapp/
-├── Cargo.toml                # Dependencies & features
+├── Cargo.toml                # Project manifest, trimmed features & release profiles
 └── src/
-    ├── main.rs               # Binary entry point & Iced app launcher
+    ├── main.rs               # App entry point & Iced runtime initialization
     ├── app/                  # Elm Architecture Core
-    │   ├── mod.rs            # Facade re-exporting ReaderApp & Message
-    │   ├── state.rs          # ReaderApp struct, new(), theme(), save_session()
-    │   ├── messages.rs       # Exhaustive Message enum
-    │   ├── actions.rs        # Key normalization & Action dispatcher
-    │   ├── tasks.rs          # Tokio worker tasks & pre-fetch priority queue
-    │   ├── update.rs         # Reducer loop, debounced scroll/zoom, session sync
-    │   └── view.rs           # Root UI composition & modal stack
-    ├── engine/               # Document Decoders & Renderers
-    │   ├── mod.rs            # Load dispatcher (load_document)
+    │   ├── mod.rs            # Facade module re-exporting ReaderApp & Message
+    │   ├── state.rs          # ReaderApp struct, new(), theme(), save_session(), panic-proof restoration
+    │   ├── messages.rs       # Exhaustive Message enum definition
+    │   ├── actions.rs        # Key normalization, modifier filters & Action dispatcher
+    │   ├── tasks.rs          # Tokio worker tasks, non-blocking thumbnail queue (8 workers)
+    │   ├── view.rs           # Root UI stack assembly & persistent base layout
+    │   └── update/           # Modular App Reducer
+    │       ├── mod.rs        # Main Message dispatcher
+    │       ├── tabs.rs       # Open, close, select & mouse drag-swap tab handlers
+    │       ├── navigation.rs # Page turns, zoom, scroll & page input box handlers
+    │       ├── side_panel.rs # Side panel toggle, sub-tab & thumbnail scroll handlers
+    │       ├── settings.rs   # Hotkey remapping, window mode & event handlers
+    │       └── renders.rs    # Page & thumbnail background render completion callbacks
+    ├── engine/               # Document Engine Layer
+    │   ├── mod.rs            # Factory loader (load_document)
     │   ├── traits.rs         # DocumentBackend trait, RenderQuality, PageRenderRequest
-    │   ├── mupdf.rs          # Thread-safe MuPDF engine (PDF, EPUB, MOBI, CBZ, XPS, FB2)
-    │   ├── djvu.rs           # Native DjVu engine
-    │   └── docx.rs           # Native DOCX ZIP XML extractor & layout renderer
-    ├── models/               # Domain Models & State
+    │   ├── mupdf.rs          # Thread-safe MuPDF engine with O(1) lock-free dimension cache
+    │   ├── djvu.rs           # Native DjVu wavelet engine
+    │   └── docx.rs           # In-memory DOCX XML-to-HTML converter & MuPDF Fitz pipeline
+    ├── models/               # Persistence & Workspace State
     │   ├── mod.rs
     │   ├── session.rs        # SessionData, AppSettings, FileHistoryRecord, KeyBinding
-    │   └── workspace.rs      # RuntimeTab, byte-budget LRU texture cache
-    └── ui/                   # GUI Components & Styling
-        ├── mod.rs
-        ├── theme.rs          # Theme definitions & transparent scrollable styles
+    │   └── workspace.rs      # RuntimeTab, byte-budget LRU texture cache, side_panel_thumb_y
+    └── ui/                   # User Interface & Theme System
+        ├── mod.rs            # Exports components and theme
+        ├── theme.rs          # Theme-adaptive transparent & invisible scrollable styles
         └── components/
             ├── mod.rs
-            ├── tab_bar.rs    # Scrollable browser tab bar
-            ├── viewer.rs     # Canvas viewport, control tray, virtualized scrollable
-            ├── side_panel.rs # TOC Outline tree & thumbnail preview grid
-            └── settings.rs   # Glassmorphism keybinding modal
-```
-
----
-
-## Prerequisites & Building
-
-### System Dependencies (Linux)
-MuPDF C bindings require C toolchain dependencies:
-```bash
-# Debian / Ubuntu
-sudo apt install build-essential pkg-config libclang-dev
-```
-
-### Build Commands
-```bash
-# Debug build
-cargo build
-
-# Optimized Release build
-cargo build --release
-
-# Run application
-cargo run --release
-```
-
----
-
-## Architecture & Developer Overview
-
-### 1. State Management (Model-View-Update)
-* **Model (`ReaderApp`)**: Holds global application settings, open `RuntimeTab` instances, active tab pointers, keybinding mappings, and modal states.
-* **Message (`messages.rs`)**: Exhaustive enum handling UI events, keyboard shortcuts, Tokio async results, debounced scroll/zoom settling, and rendering outputs.
-* **Update (`update.rs`)**: Reducer modifying state, persisting session state to `session.json`, and dispatching async tasks.
-* **View (`view.rs` / `ui/components/`)**: Pure, stateless UI functions assembling layout components.
-
-### 2. Thread Safety & Lock-Free Rendering
-* **MuPDF Thread Safety**: `Document` is wrapped in `ThreadSafeDocument(Mutex<Document>)` to allow safe cross-thread usage across background Tokio blocking threads.
-* **Lock-Free UI Dimension Access**: `MuPdfBackend` pre-caches all page dimensions (`Vec<(f32, f32)>`) during `open()`. The main UI thread reads page dimensions in $O(1)$ time without acquiring `Mutex` locks, preventing 60 FPS GUI freezes during rasterization.
-* **Offloaded Handle Construction**: `iced::widget::image::Handle::from_rgba` runs inside `tokio::task::spawn_blocking`. The UI thread receives pre-built, display-ready image handles.
-
-### 3. Rendering Pipeline & Memory Management
-* **Progressive Quality Tiers**:
-  * `Fuzzy` ($0.20\times$ scale) — Immediate low-res preview ($<1\text{ ms}$).
-  * `Draft` ($0.55\times$ scale) — Fast scrolling ($60\text{ FPS}$).
-  * `High` ($1.25\times$ scale) — Sharp text focus.
-* **Resolution Clamping**: Raster scale is bounded to max $3840 \times 3840\text{ px}$. High zoom factors on 8K scanned pages will never allocate gigabytes of uncompressed RGBA RAM.
-* **SIMD Pixel Pipeline**: Fast slice-copy `copy_from_slice` buffer construction vectorizes RGBA conversion, reducing per-frame processing from $250\text{ ms}$ to $2\text{ ms}$.
-* **Viewport Virtualization (`viewer.rs`)**: Continuous mode only passes image handles to the UI for visible pages (`current_page - 4` to `current_page + 8`). Distant pages render as zero-texture blank boxes with exact pixel dimensions, keeping RAM usage under $35\text{ MB}$ per tab.
-* **Byte-Budget LRU Cache**: `RuntimeTab::enforce_memory_budget` enforces a strict $45\text{ MB}$ RAM budget per tab by evicting distant page textures when exceeded.
-
----
-
-## Extending the App: Adding a New Format Backend
-
-To implement support for a new document format (e.g., `.txt` or `.cbr`):
-
-1. **Implement `DocumentBackend`** in `src/engine/your_format.rs`:
-   ```rust
-   use crate::engine::traits::{DocumentBackend, PageRenderRequest, TocItem};
-   use image::RgbaImage;
-
-   #[derive(Debug)]
-   pub struct CustomBackend { ... }
-
-   impl DocumentBackend for CustomBackend {
-       fn page_count(&self) -> usize { ... }
-       fn page_dimensions(&self, page_index: usize) -> (f32, f32) { ... }
-       fn render_page(&self, request: &PageRenderRequest) -> Result<RgbaImage, String> { ... }
-       fn table_of_contents(&self) -> Vec<TocItem> { ... }
-   }
-   ```
-
-2. **Register Extension** in `src/engine/mod.rs`:
-   ```rust
-   match ext.as_str() {
-       "custom" => Ok(Arc::new(CustomBackend::open(path)?)),
-       _ => Ok(Arc::new(MuPdfBackend::open(path)?)),
-   }
-   ```
-
-3. **Update File Dialog Filter** in `src/app/update.rs`:
-   Add extension to `AsyncFileDialog::new().add_filter(...)`.
+            ├── tab_bar.rs    # Horizontal scrollable tab bar with mouse_area drag reordering
+            ├── side_panel.rs # Outline TOC tree & fixed-height thumbnail grid
+            ├── settings.rs   # Glassmorphic keymap modal overlay
+            └── viewer/       # Decomposed Document Reader Viewport
+                ├── mod.rs    # Root reader canvas layout assembly
+                ├── toolbar.rs# Floating control tray & interactive page input
+                ├── continuous.rs # Virtualized single & double continuous scroll views
+                └── paginated.rs  # Paginated single & double facing page views

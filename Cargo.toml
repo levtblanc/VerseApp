@@ -1,24 +1,27 @@
 [package]
-name = "verseapp"
+name = "Verse"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.13", features = ["image", "tokio", "svg"] }
-rfd = "0.15"
+# Trimmed dependencies for minimal binary footprint
+tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "sync", "time", "macros"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+zip = { version = "2.1", default-features = false, features = ["deflate"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "sync", "time", "macros"] }
-dirs = "5.0"
-zip = { version = "2.1", default-features = false, features = ["deflate"] }
-mupdf = "0.8"
-djvu = "0.1.0"
-rdocx = "0.1"
 
+# Core GUI and document engines
+iced = { version = "0.13", features = ["image", "tokio", "svg"] }
+rfd = "0.15"
+dirs = "5.0"
+mupdf = "0.8"
+djvu = "0.1"
+
+# Binary size optimization
 [profile.release]
-opt-level = "s"     # Optimize for size ("z" or "s") instead of speed
-lto = true          # Link-Time Optimization (removes unused code across crates)
-codegen-units = 1   # Reduces parallel code units to allow better size optimizations
-panic = "abort"     # Removes stack unwinding code when a panic occurs
-strip = true        # Automatically strips debug symbols from the executable
+opt-level = "z"     # Optimize for size
+lto = true          # Fat Link-Time Optimization
+codegen-units = 1   # Maximize LTO optimization scope
+panic = "abort"     # Remove unwinding tables
+strip = true        # Strip debug symbols automatically

@@ -13,6 +13,7 @@ pub struct ReaderApp {
     pub active_tab_id: Option<usize>,
     pub next_tab_id: usize,
     pub split_secondary_tab_id: Option<usize>,
+    pub dragged_tab_id: Option<usize>, // Added tab drag reordering tracking field
 
     pub is_settings_open: bool,
     pub remapping_action: Option<crate::models::session::Action>,
@@ -30,7 +31,9 @@ impl ReaderApp {
         let mut next_tab_id = 1;
 
         for tab_session in &session.open_tabs {
-            if let Ok(backend) = load_document(&tab_session.file_path) {
+            let load_result = std::panic::catch_unwind(|| load_document(&tab_session.file_path));
+
+            if let Ok(Ok(backend)) = load_result {
                 let id = next_tab_id;
                 next_tab_id += 1;
 
@@ -64,6 +67,7 @@ impl ReaderApp {
             active_tab_id,
             next_tab_id,
             split_secondary_tab_id: None,
+            dragged_tab_id: None, // Initialized as None
             is_settings_open: false,
             remapping_action: None,
             active_modifiers: Modifiers::default(),
@@ -83,19 +87,15 @@ impl ReaderApp {
                 t.side_panel_tab,
                 t.is_continuous,
                 t.current_page,
-                t.zoom,
-                t.layout,
             ));
 
-            if let Some((side_open, side_tab, continuous, current_page, zoom, layout)) = active_info {
+            if let Some((side_open, side_tab, continuous, current_page)) = active_info {
                 if side_open && side_tab == crate::models::session::SidePanelTab::Thumbnails {
                     initial_tasks.push(app.request_missing_thumbnail_renders(active_id));
                 }
 
                 if continuous && current_page > 0 {
-                    let page_height = 600.0 * zoom + 12.0;
-                    let row_idx = if layout == crate::models::session::PageLayout::Double { current_page / 2 } else { current_page };
-                    let target_y = row_idx as f32 * page_height;
+                    let target_y = app.tabs.iter().find(|t| t.id == active_id).unwrap().y_offset_for_page(current_page);
 
                     initial_tasks.push(iced::widget::scrollable::scroll_to(
                         iced::widget::scrollable::Id::new(format!("viewer_scroll_{}", active_id)),

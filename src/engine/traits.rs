@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RenderQuality {
-    Fuzzy, // 0.25x scale: <1ms pre-render
-    Draft, // 0.8x scale: Fast 60 FPS scrolling
-    High,  // 1.8x scale: Sharp high-DPI text
+    Fuzzy, // 0.20x scale: <1ms pre-render
+    Draft, // 0.55x scale: Fast 60 FPS scrolling
+    High,  // 1.25x scale: Sharp high-DPI text
 }
 
 #[derive(Debug, Clone)]
@@ -14,7 +14,7 @@ pub struct PageRenderRequest {
     pub zoom: f32,
     pub rotation: u16,
     pub quality: RenderQuality,
-    pub max_dimensions: Option<(u32, u32)>, // Optional (max_width, max_height) bounding box
+    pub max_dimensions: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

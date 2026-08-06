@@ -9,6 +9,7 @@ use crate::ui::theme::transparent_scrollable_style;
 pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let tab_id = tab.id;
     let text_color = Color::from_rgb(0.90, 0.92, 0.96);
+    let accent_text_color = Color::from_rgb(0.48, 0.70, 0.98);
     let side_scrollbar = scrollable::Scrollbar::default()
         .width(12.0)
         .scroller_width(12.0)
@@ -86,13 +87,14 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         }
         SidePanelTab::Thumbnails => {
             let mut thumb_col = column![]
-                .spacing(12)
+                .spacing(10) // Fixed 10.0pt spacing
                 .align_x(Alignment::Center)
                 .width(Length::Fill)
                 .height(Length::Shrink);
 
             for page_idx in 0..tab.page_count {
                 let is_current = page_idx == tab.current_page;
+                let active_label_color = if is_current { accent_text_color } else { text_color };
 
                 let card_content: Element<Message> = if let Some(handle) = tab.thumbnail_cache.get(&page_idx) {
                     image(handle.clone())
@@ -100,16 +102,24 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         .height(Length::Fixed(180.0))
                         .into()
                 } else {
-                    container(text(format!("Page {}", page_idx + 1)).size(11).color(text_color))
+                    container(text(format!("Page {}", page_idx + 1)).size(11).color(active_label_color))
                         .width(Length::Fixed(140.0))
                         .height(Length::Fixed(180.0))
                         .align_x(Alignment::Center)
                         .align_y(Alignment::Center)
-                        .style(|_| container::Style {
-                            background: Some(Color::from_rgb(0.18, 0.19, 0.22).into()),
+                        .style(move |_| container::Style {
+                            background: Some(if is_current {
+                                Color::from_rgb(0.20, 0.26, 0.38).into()
+                            } else {
+                                Color::from_rgb(0.18, 0.19, 0.22).into()
+                            }),
                             border: iced::Border {
-                                color: Color::from_rgb(0.28, 0.3, 0.35),
-                                width: 1.0,
+                                color: if is_current {
+                                    Color::from_rgb(0.38, 0.58, 0.92)
+                                } else {
+                                    Color::from_rgb(0.28, 0.30, 0.35)
+                                },
+                                width: if is_current { 2.0 } else { 1.0 },
                                 radius: 4.0.into(),
                             },
                             ..Default::default()
@@ -124,12 +134,16 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         let border_color = if is_current {
                             Color::from_rgb(0.38, 0.58, 0.92)
                         } else if matches!(status, button::Status::Hovered) {
-                            Color::from_rgb(0.5, 0.55, 0.65)
+                            Color::from_rgb(0.50, 0.55, 0.65)
                         } else {
                             Color::TRANSPARENT
                         };
                         button::Style {
-                            background: Some(Color::TRANSPARENT.into()),
+                            background: Some(if is_current {
+                                Color::from_rgb(0.20, 0.26, 0.38).into()
+                            } else {
+                                Color::TRANSPARENT.into()
+                            }),
                             text_color: Color::from_rgb(0.90, 0.92, 0.96),
                             border: iced::Border {
                                 color: border_color,
@@ -140,14 +154,25 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         }
                     });
 
-                let label = text(format!("Page {}", page_idx + 1)).size(11).color(text_color);
-                thumb_col = thumb_col.push(column![thumb_btn, label].spacing(4).align_x(Alignment::Center));
+                let label = text(format!("Page {}", page_idx + 1)).size(11).color(active_label_color);
+
+                // Enforce exact Fixed(200.0pt) height container per thumbnail block
+                let item_card = container(
+                    column![thumb_btn, label].spacing(2).align_x(Alignment::Center)
+                )
+                .height(Length::Fixed(200.0));
+
+                thumb_col = thumb_col.push(item_card);
             }
 
             scrollable(thumb_col)
                 .direction(scrollable::Direction::Vertical(side_scrollbar))
                 .style(transparent_scrollable_style)
                 .id(scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)))
+                .on_scroll(move |viewport| Message::SidePanelScrolled {
+                    tab_id,
+                    offset_y: viewport.absolute_offset().y,
+                })
                 .height(Length::Fill)
                 .into()
         }

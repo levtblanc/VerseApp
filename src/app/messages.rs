@@ -13,6 +13,10 @@ pub enum Message {
     CloseTab(usize),
     SplitViewRequested(usize, bool),
 
+    StartTabDrag(usize),
+    TabDraggedOver(usize),
+    EndTabDrag,
+
     ChangePage(usize, usize),
     PageInputChanged(usize, String),
     PageInputSubmitted(usize),
@@ -25,6 +29,7 @@ pub enum Message {
     SetSidePanelTab(usize, SidePanelTab),
 
     ViewportScrolled { tab_id: usize, offset_y: f32 },
+    SidePanelScrolled { tab_id: usize, offset_y: f32 },
 
     ScrollSettled { tab_id: usize, sequence: usize },
     ZoomSettled { tab_id: usize, sequence: usize },

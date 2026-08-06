@@ -8,7 +8,6 @@ pub fn render_settings_modal<'a>(
     settings: &'a AppSettings,
     remapping_action: Option<Action>,
     active_modifiers: iced::keyboard::Modifiers,
-    base_content: Element<'a, Message>,
 ) -> Element<'a, Message> {
     let text_primary = Color::from_rgb(0.95, 0.95, 0.98);
     let text_secondary = Color::from_rgb(0.70, 0.73, 0.80);
@@ -195,19 +194,14 @@ pub fn render_settings_modal<'a>(
         ..Default::default()
     });
 
-    iced::widget::stack![
-        base_content,
-        iced::widget::opaque(
-            container(modal_card)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.65).into()),
-                    ..Default::default()
-                })
-        )
-    ]
-    .into()
+    container(modal_card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.65).into()),
+            ..Default::default()
+        })
+        .into()
 }

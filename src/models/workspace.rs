@@ -33,7 +33,7 @@ pub struct RuntimeTab {
     pub toc: Vec<TocItem>,
 
     pub current_page: usize,
-    pub page_input_text: String, // Input text state for page navigation
+    pub page_input_text: String,
     pub zoom: f32,
 
     pub layout: PageLayout,
@@ -42,6 +42,7 @@ pub struct RuntimeTab {
     pub is_side_panel_open: bool,
     pub is_side_panel_pinned: bool,
     pub side_panel_tab: SidePanelTab,
+    pub side_panel_scroll_offset: f32,
 
     pub scroll_sequence: usize,
     pub zoom_sequence: usize,
@@ -87,6 +88,7 @@ impl RuntimeTab {
             is_side_panel_open,
             is_side_panel_pinned,
             side_panel_tab,
+            side_panel_scroll_offset: 0.0,
             scroll_sequence: 0,
             zoom_sequence: 0,
             texture_cache: HashMap::new(),
@@ -95,6 +97,11 @@ impl RuntimeTab {
             thumbnail_lru_order: VecDeque::new(),
             loading_thumbnails: HashSet::new(),
         }
+    }
+
+    /// Exact 210.0pt step matching Fixed(200.0pt) card + 10.0pt spacing (Zero drift)
+    pub fn side_panel_thumb_y(&self, page_index: usize) -> f32 {
+        page_index as f32 * 210.0
     }
 
     pub fn page_at_y_offset(&self, offset_y: f32) -> usize {

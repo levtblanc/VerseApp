@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Verse
+Comment=Verse Reader
+Exec=verseapp
+Icon=icon
+Type=Application
+Categories=Utility;
+Terminal=false
+StartupWMClass=verseapp

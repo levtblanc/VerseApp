@@ -5,7 +5,7 @@ use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
 use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality};
 
-const MAX_CONCURRENT_THUMBNAILS: usize = 5;
+const MAX_CONCURRENT_THUMBNAILS: usize = 8;
 
 pub fn spawn_render_task(
     tab_id: usize,
@@ -44,8 +44,6 @@ pub fn spawn_thumbnail_render_task(
 ) -> Task<Message> {
     Task::perform(
         async move {
-            // Crisp Middle-Ground Thumbnail Request:
-            // RenderQuality::Draft with 300x400 max bounds for High-DPI sharpness
             let req = PageRenderRequest {
                 page_index,
                 zoom: 0.5,
@@ -96,8 +94,7 @@ impl ReaderApp {
 
     pub fn request_missing_thumbnail_renders(&mut self, tab_id: usize) -> Task<Message> {
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-            // Yield if main page is still rasterizing
-            if !tab.loading_pages.is_empty() || tab.loading_thumbnails.len() >= MAX_CONCURRENT_THUMBNAILS {
+            if tab.loading_thumbnails.len() >= MAX_CONCURRENT_THUMBNAILS {
                 return Task::none();
             }
 
@@ -106,8 +103,12 @@ impl ReaderApp {
                 return Task::none();
             }
 
-            let start = tab.current_page.saturating_sub(15);
-            let end = (tab.current_page + 16).min(page_count);
+            // Derive center page directly from side panel scroll position
+            let center_page = ((tab.side_panel_scroll_offset / 210.0).round() as usize)
+                .min(page_count.saturating_sub(1));
+
+            let start = center_page.saturating_sub(12);
+            let end = (center_page + 15).min(page_count);
 
             let mut candidates: Vec<usize> = (start..end)
                 .filter(|&idx| {
@@ -115,8 +116,8 @@ impl ReaderApp {
                 })
                 .collect();
 
-            // Prioritize thumbnails closest to current reading page
-            candidates.sort_by_key(|&idx| (idx as isize - tab.current_page as isize).abs());
+            // Sort candidates by proximity to current side panel view
+            candidates.sort_by_key(|&idx| (idx as isize - center_page as isize).abs());
 
             let available_slots = MAX_CONCURRENT_THUMBNAILS.saturating_sub(tab.loading_thumbnails.len());
             let to_spawn: Vec<usize> = candidates.into_iter().take(available_slots).collect();

@@ -1,2 +1,12 @@
 [target.x86_64-pc-windows-gnu]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[package.metadata.appimage]
+
+icon = "assets/icon.svg"
+
+assets = [
+    "assets/icon.svg",
+    "assets/verseapp.desktop"
+]
+

@@ -1,14 +1,19 @@
-use iced::widget::{button, container, row, scrollable, text};
+use iced::widget::{button, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Color, Element, Length};
 use crate::app::messages::Message;
 use crate::models::workspace::RuntimeTab;
 use crate::ui::theme::invisible_scrollable_style;
 
-pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'a, Message> {
+pub fn render_tab_bar<'a>(
+    tabs: &'a [RuntimeTab],
+    active_id: usize,
+    dragged_tab_id: Option<usize>,
+) -> Element<'a, Message> {
     let mut tab_row = row![].spacing(6).align_y(Alignment::Center);
 
     for tab in tabs {
         let is_active = tab.id == active_id;
+        let is_dragging = dragged_tab_id == Some(tab.id);
         let tab_id = tab.id;
 
         let display_title = if tab.title.len() > 18 {
@@ -17,19 +22,16 @@ pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'
             tab.title.clone()
         };
 
-        let select_btn = button(text(display_title).size(13))
-            .on_press(Message::SelectTab(tab_id))
-            .padding([5.0, 8.0])
-            .style(move |_theme, _status| button::Style {
-                background: Some(Color::TRANSPARENT.into()),
-                text_color: if is_active {
-                    Color::from_rgb(1.0, 1.0, 1.0)
-                } else {
-                    Color::from_rgb(0.8, 0.85, 0.9)
-                },
-                border: iced::Border::default(),
-                ..Default::default()
+        // Plain styled text element (no inner button so mouse_area receives clicks)
+        let title_label = text(display_title)
+            .size(13)
+            .color(if is_active {
+                Color::from_rgb(1.0, 1.0, 1.0)
+            } else {
+                Color::from_rgb(0.8, 0.85, 0.9)
             });
+
+        let title_container = container(title_label).padding([4.0, 6.0]);
 
         let close_btn = button(text("✕").size(10))
             .on_press(Message::CloseTab(tab_id))
@@ -50,14 +52,20 @@ pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'
                 }
             });
 
-        let tab_inner_row = row![select_btn, close_btn]
+        let tab_inner_row = row![title_container, close_btn]
             .spacing(2)
             .align_y(Alignment::Center);
 
         let tab_card = container(tab_inner_row)
             .padding([1.0, 4.0])
             .style(move |_theme| {
-                let (bg_color, border_color, border_width) = if is_active {
+                let (bg_color, border_color, border_width) = if is_dragging {
+                    (
+                        Color::from_rgb(0.32, 0.42, 0.58),
+                        Color::from_rgb(0.48, 0.68, 0.98),
+                        2.0,
+                    )
+                } else if is_active {
                     (
                         Color::from_rgb(0.22, 0.28, 0.38),
                         Color::from_rgb(0.38, 0.58, 0.92),
@@ -82,7 +90,12 @@ pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'
                 }
             });
 
-        tab_row = tab_row.push(tab_card);
+        // mouse_area receives press events anywhere on the tab card
+        let draggable_tab = mouse_area(tab_card)
+            .on_press(Message::StartTabDrag(tab_id))
+            .on_enter(Message::TabDraggedOver(tab_id));
+
+        tab_row = tab_row.push(draggable_tab);
     }
 
     let new_tab_btn = button(text("+").size(15))
@@ -107,7 +120,6 @@ pub fn render_tab_bar<'a>(tabs: &'a [RuntimeTab], active_id: usize) -> Element<'
 
     tab_row = tab_row.push(new_tab_btn);
 
-    // Scrollable tab strip with 100% invisible scrollbar styling
     let scrollable_tab_strip = scrollable(tab_row)
         .direction(scrollable::Direction::Horizontal(scrollable::Scrollbar::default()))
         .style(invisible_scrollable_style)

@@ -1,6 +1,7 @@
 use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality, TocItem};
 use image::RgbaImage;
 use mupdf::{Colorspace, Document, Matrix, Outline};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -12,7 +13,8 @@ unsafe impl Sync for ThreadSafeDocument {}
 pub struct MuPdfBackend {
     file_name: String,
     total_pages: usize,
-    dimensions_cache: Vec<(f32, f32)>, // Pre-computed lock-free dimensions cache
+    default_dimensions: (f32, f32),
+    dimensions_cache: Mutex<HashMap<usize, (f32, f32)>>,
     doc: Arc<ThreadSafeDocument>,
 }
 
@@ -26,24 +28,22 @@ impl MuPdfBackend {
 
         let total_pages = doc.page_count().unwrap_or(1) as usize;
 
-        // Pre-compute page dimensions during document open so UI thread never locks Mutex
-        let mut dimensions_cache = Vec::with_capacity(total_pages);
-        for i in 0..total_pages {
-            if let Ok(page) = doc.load_page(i as i32) {
-                if let Ok(bounds) = page.bounds() {
-                    dimensions_cache.push((bounds.width(), bounds.height()));
-                } else {
-                    dimensions_cache.push((595.0, 842.0));
-                }
+        // Sample page 0 only (<5ms) for O(1) instant document open
+        let default_dimensions = if let Ok(page) = doc.load_page(0) {
+            if let Ok(bounds) = page.bounds() {
+                (bounds.width(), bounds.height())
             } else {
-                dimensions_cache.push((595.0, 842.0));
+                (595.0, 842.0)
             }
-        }
+        } else {
+            (595.0, 842.0)
+        };
 
         Ok(Self {
             file_name,
             total_pages,
-            dimensions_cache,
+            default_dimensions,
+            dimensions_cache: Mutex::new(HashMap::new()),
             doc: Arc::new(ThreadSafeDocument(Mutex::new(doc))),
         })
     }
@@ -54,13 +54,16 @@ impl DocumentBackend for MuPdfBackend {
         self.total_pages
     }
 
-    /// Lock-Free: Reads cached dimensions directly from RAM to prevent UI thread freezes
     fn page_dimensions(&self, page_index: usize) -> (f32, f32) {
-        self.dimensions_cache.get(page_index).copied().unwrap_or((595.0, 842.0))
+        if let Ok(guard) = self.dimensions_cache.lock() {
+            if let Some(&dim) = guard.get(&page_index) {
+                return dim;
+            }
+        }
+        self.default_dimensions
     }
 
     fn render_page(&self, request: &PageRenderRequest) -> Result<RgbaImage, String> {
-        // Scope the Mutex lock so it releases immediately after rasterization
         let pixmap = {
             let guard = self.doc.0.lock().map_err(|_| "Failed to acquire MuPDF lock".to_string())?;
 
@@ -71,6 +74,10 @@ impl DocumentBackend for MuPdfBackend {
             let bounds = page.bounds().map_err(|e| e.to_string())?;
             let doc_w = bounds.width().max(1.0);
             let doc_h = bounds.height().max(1.0);
+
+            if let Ok(mut cache_guard) = self.dimensions_cache.lock() {
+                cache_guard.insert(request.page_index, (bounds.width(), bounds.height()));
+            }
 
             let quality_multiplier = match request.quality {
                 RenderQuality::Fuzzy => 0.2,
@@ -89,14 +96,13 @@ impl DocumentBackend for MuPdfBackend {
 
             page.to_pixmap(&matrix, &Colorspace::device_rgb(), false, true)
                 .map_err(|e| format!("MuPDF rasterization error on page {}: {}", request.page_index, e))?
-        }; // Mutex lock released here!
+        };
 
         let width = pixmap.width();
         let height = pixmap.height();
         let samples = pixmap.samples();
         let n_components = pixmap.n();
 
-        // SIMD-Vectorized RGBA construction without holding Mutex
         let mut rgba_bytes = vec![255u8; (width * height * 4) as usize];
 
         if n_components == 3 {
