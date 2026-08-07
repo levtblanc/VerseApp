@@ -2,7 +2,9 @@ use iced::keyboard::Modifiers;
 use iced::window;
 use iced::{Subscription, Task, Theme};
 use crate::app::messages::Message;
+use crate::app::tasks::get_disk_cache;
 use crate::engine::load_document;
+use crate::models::disk_cache::UsefulCacheEntry;
 use crate::models::session::{AppSettings, FileHistoryRecord, SessionData};
 use crate::models::workspace::RuntimeTab;
 use crate::ui::theme::get_iced_theme;
@@ -13,7 +15,7 @@ pub struct ReaderApp {
     pub active_tab_id: Option<usize>,
     pub next_tab_id: usize,
     pub split_secondary_tab_id: Option<usize>,
-    pub dragged_tab_id: Option<usize>, // Added tab drag reordering tracking field
+    pub dragged_tab_id: Option<usize>,
 
     pub is_settings_open: bool,
     pub remapping_action: Option<crate::models::session::Action>,
@@ -67,7 +69,7 @@ impl ReaderApp {
             active_tab_id,
             next_tab_id,
             split_secondary_tab_id: None,
-            dragged_tab_id: None, // Initialized as None
+            dragged_tab_id: None,
             is_settings_open: false,
             remapping_action: None,
             active_modifiers: Modifiers::default(),
@@ -139,6 +141,14 @@ impl ReaderApp {
             is_side_panel_pinned: t.is_side_panel_pinned,
             side_panel_tab: t.side_panel_tab,
         }).collect();
+
+        // Perform Smart Disk Cache Cleanup on exit/session save
+        let useful_entries: Vec<UsefulCacheEntry> = self.tabs.iter().map(|t| UsefulCacheEntry {
+            file_path: t.file_path.clone(),
+            current_page: t.current_page,
+        }).collect();
+
+        get_disk_cache().retain_useful_cache(&useful_entries);
 
         for t in &self.tabs {
             session.file_history.insert(t.file_path.clone(), FileHistoryRecord {

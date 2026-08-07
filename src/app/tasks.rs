@@ -1,14 +1,22 @@
 use iced::Task;
 use iced::widget::image::Handle;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, LazyLock};
 use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
 use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality};
+use crate::models::disk_cache::DiskCache;
 
-const MAX_CONCURRENT_THUMBNAILS: usize = 8;
+static GLOBAL_DISK_CACHE: LazyLock<DiskCache> = LazyLock::new(DiskCache::new);
+const MAX_CONCURRENT_THUMBNAILS: usize = 4;
+
+pub fn get_disk_cache() -> &'static DiskCache {
+    &GLOBAL_DISK_CACHE
+}
 
 pub fn spawn_render_task(
     tab_id: usize,
+    file_path: PathBuf,
     page_index: usize,
     zoom: f32,
     quality: RenderQuality,
@@ -16,6 +24,16 @@ pub fn spawn_render_task(
 ) -> Task<Message> {
     Task::perform(
         async move {
+            let quality_tag = match quality {
+                RenderQuality::Fuzzy => "fuzzy",
+                RenderQuality::Draft => "draft",
+                RenderQuality::High => "high",
+            };
+
+            if let Some((handle, w, h)) = GLOBAL_DISK_CACHE.get_page(&file_path, page_index, zoom, quality_tag) {
+                return Ok((handle, w, h));
+            }
+
             let req = PageRenderRequest {
                 page_index,
                 zoom,
@@ -27,6 +45,10 @@ pub fn spawn_render_task(
                 let rgba = backend.render_page(&req)?;
                 let w = rgba.width();
                 let h = rgba.height();
+                let raw_bytes = rgba.as_raw();
+
+                GLOBAL_DISK_CACHE.save_page(&file_path, page_index, zoom, quality_tag, raw_bytes, w, h);
+
                 let handle = Handle::from_rgba(w, h, rgba.into_raw());
                 Ok((handle, w, h))
             })
@@ -39,11 +61,16 @@ pub fn spawn_render_task(
 
 pub fn spawn_thumbnail_render_task(
     tab_id: usize,
+    file_path: PathBuf,
     page_index: usize,
     backend: Arc<dyn DocumentBackend>,
 ) -> Task<Message> {
     Task::perform(
         async move {
+            if let Some((handle, _, _)) = GLOBAL_DISK_CACHE.get_page(&file_path, page_index, 0.5, "thumb") {
+                return Ok(handle);
+            }
+
             let req = PageRenderRequest {
                 page_index,
                 zoom: 0.5,
@@ -53,7 +80,11 @@ pub fn spawn_thumbnail_render_task(
             };
             tokio::task::spawn_blocking(move || {
                 let rgba = backend.render_page(&req)?;
-                let handle = Handle::from_rgba(rgba.width(), rgba.height(), rgba.into_raw());
+                let w = rgba.width();
+                let h = rgba.height();
+                GLOBAL_DISK_CACHE.save_page(&file_path, page_index, 0.5, "thumb", rgba.as_raw(), w, h);
+
+                let handle = Handle::from_rgba(w, h, rgba.into_raw());
                 Ok(handle)
             })
             .await
@@ -73,6 +104,7 @@ impl ReaderApp {
             let requests = tab.required_pages_with_quality();
             let mut tasks = Vec::new();
             let current_zoom = tab.zoom;
+            let file_path = tab.file_path.clone();
 
             for (page_idx, target_quality) in requests {
                 if !tab.loading_pages.contains(&page_idx) {
@@ -83,7 +115,14 @@ impl ReaderApp {
 
                     if needs_render {
                         tab.loading_pages.insert(page_idx);
-                        tasks.push(spawn_render_task(tab_id, page_idx, tab.zoom, target_quality, tab.backend.clone()));
+                        tasks.push(spawn_render_task(
+                            tab_id,
+                            file_path.clone(),
+                            page_idx,
+                            tab.zoom,
+                            target_quality,
+                            tab.backend.clone(),
+                        ));
                     }
                 }
             }
@@ -103,12 +142,14 @@ impl ReaderApp {
                 return Task::none();
             }
 
-            // Derive center page directly from side panel scroll position
-            let center_page = ((tab.side_panel_scroll_offset / 210.0).round() as usize)
-                .min(page_count.saturating_sub(1));
+            let center_page = if tab.side_panel_scroll_offset > 0.0 {
+                (tab.side_panel_scroll_offset / 210.0).floor() as usize
+            } else {
+                tab.current_page
+            };
 
-            let start = center_page.saturating_sub(12);
-            let end = (center_page + 15).min(page_count);
+            let start = center_page.saturating_sub(6);
+            let end = (center_page + 8).min(page_count);
 
             let mut candidates: Vec<usize> = (start..end)
                 .filter(|&idx| {
@@ -116,17 +157,18 @@ impl ReaderApp {
                 })
                 .collect();
 
-            // Sort candidates by proximity to current side panel view
             candidates.sort_by_key(|&idx| (idx as isize - center_page as isize).abs());
 
             let available_slots = MAX_CONCURRENT_THUMBNAILS.saturating_sub(tab.loading_thumbnails.len());
             let to_spawn: Vec<usize> = candidates.into_iter().take(available_slots).collect();
 
+            let file_path = tab.file_path.clone();
             let mut tasks = Vec::new();
             for page_idx in to_spawn {
                 tab.loading_thumbnails.insert(page_idx);
                 tasks.push(spawn_thumbnail_render_task(
                     tab_id,
+                    file_path.clone(),
                     page_idx,
                     tab.backend.clone(),
                 ));

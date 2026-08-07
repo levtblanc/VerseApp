@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
+use crate::app::tasks::get_disk_cache;
 use crate::engine::load_document;
 use crate::engine::traits::DocumentBackend;
 use crate::models::session::{PageLayout, SessionData, SidePanelTab};
@@ -147,7 +148,14 @@ impl ReaderApp {
 
         if let Some(pos) = closing_pos {
             let was_active = self.active_tab_id == Some(id);
+            let closed_path = self.tabs[pos].file_path.clone();
             self.tabs.remove(pos);
+
+            // Immediately purge disk cache for closed file if not open in another tab
+            let is_shared = self.tabs.iter().any(|t| t.file_path == closed_path);
+            if !is_shared {
+                get_disk_cache().remove_for_file(&closed_path);
+            }
 
             if was_active {
                 if !self.tabs.is_empty() {

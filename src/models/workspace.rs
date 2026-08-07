@@ -5,8 +5,8 @@ use iced::widget::image;
 use crate::engine::traits::{DocumentBackend, RenderQuality, TocItem};
 use crate::models::session::{PageLayout, SidePanelTab};
 
-const MAX_THUMBNAIL_CACHE_SIZE: usize = 150;
-const TAB_TEXTURE_RAM_BUDGET_BYTES: usize = 60 * 1024 * 1024;
+const MAX_THUMBNAIL_CACHE_SIZE: usize = 30;
+const TAB_TEXTURE_RAM_BUDGET_BYTES: usize = 16 * 1024 * 1024; // Lowered to 16 MB process RAM budget
 
 #[derive(Clone)]
 pub struct CachedTexture {
@@ -99,7 +99,6 @@ impl RuntimeTab {
         }
     }
 
-    /// Exact 210.0pt step matching Fixed(200.0pt) card + 10.0pt spacing (Zero drift)
     pub fn side_panel_thumb_y(&self, page_index: usize) -> f32 {
         page_index as f32 * 210.0
     }
@@ -205,20 +204,10 @@ impl RuntimeTab {
 
     pub fn purge_inactive_cache(&mut self) {
         self.texture_cache.retain(|&page_idx, _| {
-            page_idx == self.current_page || page_idx == self.current_page.saturating_sub(1) || page_idx == self.current_page + 1
+            page_idx == self.current_page
         });
         self.loading_thumbnails.clear();
         self.loading_pages.clear();
-    }
-
-    pub fn insert_texture(&mut self, page_index: usize, handle: image::Handle, quality: RenderQuality) {
-        let (w, h) = match quality {
-            RenderQuality::Fuzzy => (300, 400),
-            RenderQuality::Draft => (1000, 1330),
-            RenderQuality::High => (2000, 2660),
-        };
-        let current_zoom = self.zoom;
-        self.insert_texture_with_size(page_index, handle, quality, current_zoom, w, h);
     }
 
     pub fn insert_texture_with_size(
@@ -273,14 +262,15 @@ impl RuntimeTab {
         let mut requests = Vec::new();
 
         if self.is_continuous {
-            let start = self.current_page.saturating_sub(3);
-            let end = (self.current_page + 9).min(total);
+            // Tight viewport window (1 behind, current, 2 ahead)
+            let start = self.current_page.saturating_sub(1);
+            let end = (self.current_page + 3).min(total);
 
             for p in start..end {
                 let dist = (p as isize - self.current_page as isize).abs();
-                let quality = if dist <= 1 {
+                let quality = if dist == 0 {
                     RenderQuality::High
-                } else if dist <= 4 {
+                } else if dist == 1 {
                     RenderQuality::Draft
                 } else {
                     RenderQuality::Fuzzy
@@ -292,20 +282,8 @@ impl RuntimeTab {
             if self.current_page + 1 < total {
                 requests.push((self.current_page + 1, RenderQuality::High));
             }
-            if self.current_page + 2 < total {
-                requests.push((self.current_page + 2, RenderQuality::Draft));
-            }
-            if self.current_page > 0 {
-                requests.push((self.current_page - 1, RenderQuality::Draft));
-            }
         } else {
             requests.push((self.current_page, RenderQuality::High));
-            if self.current_page + 1 < total {
-                requests.push((self.current_page + 1, RenderQuality::Draft));
-            }
-            if self.current_page > 0 {
-                requests.push((self.current_page - 1, RenderQuality::Draft));
-            }
         }
 
         requests

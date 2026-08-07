@@ -30,13 +30,27 @@ impl ReaderApp {
         self.is_tab_bar_visible = !self.is_tab_bar_visible;
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+                let mut tasks = Vec::new();
+
+                // 1. Restore continuous main document scroll position after layout shift
+                if tab.is_continuous {
+                    let target_y = tab.y_offset_for_page(tab.current_page);
+                    tasks.push(scrollable::scroll_to(
+                        scrollable::Id::new(format!("viewer_scroll_{}", active_id)),
+                        scrollable::AbsoluteOffset { x: 0.0, y: target_y },
+                    ));
+                }
+
+                // 2. Restore side panel thumbnail scroll position if open
                 if tab.is_side_panel_open {
                     let side_thumb_y = tab.side_panel_thumb_y(tab.current_page);
-                    return scrollable::scroll_to(
+                    tasks.push(scrollable::scroll_to(
                         scrollable::Id::new(format!("side_panel_scroll_{}", active_id)),
                         scrollable::AbsoluteOffset { x: 0.0, y: side_thumb_y },
-                    );
+                    ));
                 }
+
+                return Task::batch(tasks);
             }
         }
         Task::none()
