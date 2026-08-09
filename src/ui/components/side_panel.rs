@@ -4,7 +4,7 @@ use crate::app::messages::Message;
 use crate::engine::traits::TocItem;
 use crate::models::session::SidePanelTab;
 use crate::models::workspace::RuntimeTab;
-use crate::ui::theme::transparent_scrollable_style;
+use crate::ui::theme::dark_transparent_scrollable_style;
 
 pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
     let tab_id = tab.id;
@@ -79,7 +79,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
 
                 scrollable(toc_col)
                     .direction(scrollable::Direction::Vertical(side_scrollbar))
-                    .style(transparent_scrollable_style)
+                    .style(dark_transparent_scrollable_style)
                     .id(scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)))
                     .height(Length::Fill)
                     .into()
@@ -87,7 +87,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         }
         SidePanelTab::Thumbnails => {
             let mut thumb_col = column![]
-                .spacing(10) // Fixed 10.0pt spacing
+                .spacing(10)
                 .align_x(Alignment::Center)
                 .width(Length::Fill)
                 .height(Length::Shrink);
@@ -156,7 +156,6 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
 
                 let label = text(format!("Page {}", page_idx + 1)).size(11).color(active_label_color);
 
-                // Enforce exact Fixed(200.0pt) height container per thumbnail block
                 let item_card = container(
                     column![thumb_btn, label].spacing(2).align_x(Alignment::Center)
                 )
@@ -167,7 +166,7 @@ pub fn render_side_panel<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
 
             scrollable(thumb_col)
                 .direction(scrollable::Direction::Vertical(side_scrollbar))
-                .style(transparent_scrollable_style)
+                .style(dark_transparent_scrollable_style)
                 .id(scrollable::Id::new(format!("side_panel_scroll_{}", tab_id)))
                 .on_scroll(move |viewport| Message::SidePanelScrolled {
                     tab_id,
@@ -201,29 +200,51 @@ fn render_toc_item<'a>(item: &'a TocItem, tab_id: usize, depth: usize) -> Elemen
     let target_page = item.page_index;
     let title_text = item.title.clone();
     let text_color = Color::from_rgb(0.90, 0.92, 0.96);
+    let accent_color = Color::from_rgb(0.55, 0.62, 0.75);
 
-    let btn = button(text(title_text).size(12).color(text_color))
+    let indent_width = (depth * 12) as f32;
+
+    let row_content = row![
+        text("• ").size(11).color(accent_color),
+        text(title_text).size(12).color(text_color).width(Length::Fill),
+        text(format!("p. {}", target_page + 1)).size(10).color(accent_color)
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+
+    let btn = button(row_content)
         .on_press(Message::ChangePage(tab_id, target_page))
-        .padding([4.0, 8.0])
+        .padding([6.0, 8.0])
+        .width(Length::Fill)
         .style(|_theme, status| {
             let bg = match status {
                 button::Status::Hovered => Color::from_rgb(0.22, 0.26, 0.34),
-                _ => Color::TRANSPARENT,
+                _ => Color::from_rgba(1.0, 1.0, 1.0, 0.02),
             };
             button::Style {
                 background: Some(bg.into()),
                 text_color: Color::from_rgb(0.90, 0.92, 0.96),
-                border: iced::Border { radius: 4.0.into(), ..Default::default() },
+                border: iced::Border {
+                    color: Color::from_rgba(1.0, 1.0, 1.0, 0.05),
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
                 ..Default::default()
             }
         });
 
     let mut item_col = column![
-        row![]
-            .width(Length::Fixed((depth * 14) as f32))
-            .push(btn)
+        row![
+            container(row![]).width(Length::Fixed(indent_width)),
+            container(btn).width(Length::Fill)
+        ]
+        .spacing(0)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
     ]
-    .spacing(2)
+    .spacing(4)
+    .width(Length::Fill)
     .height(Length::Shrink);
 
     for child in &item.children {

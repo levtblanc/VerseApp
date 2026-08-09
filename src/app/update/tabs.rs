@@ -10,7 +10,7 @@ use crate::app::tasks::get_disk_cache;
 use crate::engine::load_document;
 use crate::engine::traits::DocumentBackend;
 use crate::models::session::{PageLayout, SessionData, SidePanelTab};
-use crate::models::workspace::RuntimeTab;
+use crate::models::workspace::{trim_memory, RuntimeTab};
 
 impl ReaderApp {
     pub fn handle_open_file_requested(&mut self) -> Task<Message> {
@@ -104,7 +104,11 @@ impl ReaderApp {
         }
     }
 
+    /// Preserves exact pixel reading position (`viewport_y`) when switching tabs.
     pub fn handle_select_tab(&mut self, id: usize) -> Task<Message> {
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
+            tab.touch();
+        }
         self.active_tab_id = Some(id);
         self.purge_all_inactive_tabs();
         self.save_session();
@@ -115,12 +119,11 @@ impl ReaderApp {
             t.is_side_panel_open,
             t.side_panel_tab,
             t.is_continuous,
-            t.current_page,
-            t.y_offset_for_page(t.current_page),
+            if t.viewport_y > 0.0 { t.viewport_y } else { t.y_offset_for_page(t.current_page) },
             t.side_panel_thumb_y(t.current_page),
         ));
 
-        if let Some((side_open, side_tab, continuous, _current_page, target_y, side_thumb_y)) = active_info {
+        if let Some((side_open, side_tab, continuous, target_y, side_thumb_y)) = active_info {
             if side_open {
                 tasks.push(scrollable::scroll_to(
                     scrollable::Id::new(format!("side_panel_scroll_{}", id)),
@@ -148,14 +151,18 @@ impl ReaderApp {
 
         if let Some(pos) = closing_pos {
             let was_active = self.active_tab_id == Some(id);
-            let closed_path = self.tabs[pos].file_path.clone();
-            self.tabs.remove(pos);
+            let mut closed_tab = self.tabs.remove(pos);
+            let closed_path = closed_tab.file_path.clone();
 
-            // Immediately purge disk cache for closed file if not open in another tab
+            closed_tab.offload_completely_from_ram();
+            drop(closed_tab);
+
             let is_shared = self.tabs.iter().any(|t| t.file_path == closed_path);
             if !is_shared {
                 get_disk_cache().remove_for_file(&closed_path);
             }
+
+            trim_memory();
 
             if was_active {
                 if !self.tabs.is_empty() {

@@ -1,6 +1,6 @@
-use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality, TocItem};
+use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality, TextQuad, TocItem};
 use image::RgbaImage;
-use mupdf::{Colorspace, Document, Matrix, Outline};
+use mupdf::{Colorspace, Document, Matrix, Outline, TextExtractOptions};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,7 @@ pub struct MuPdfBackend {
     default_dimensions: (f32, f32),
     dimensions_cache: Mutex<HashMap<usize, (f32, f32)>>,
     doc: Arc<ThreadSafeDocument>,
+    is_image_based: bool,
 }
 
 impl MuPdfBackend {
@@ -23,12 +24,21 @@ impl MuPdfBackend {
         let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
         let path_str = path.to_str().ok_or("Invalid Unicode file path")?;
 
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        let is_image_based = matches!(
+            ext.as_str(),
+            "cbz" | "cbr" | "cb7" | "cbt" | "png" | "jpg" | "jpeg" | "webp"
+        );
+
         let doc = Document::open(path_str)
             .map_err(|e| format!("MuPDF failed to open '{}': {}", path.display(), e))?;
 
         let total_pages = doc.page_count().unwrap_or(1) as usize;
 
-        // Sample page 0 only (<5ms) for O(1) instant document open
         let default_dimensions = if let Ok(page) = doc.load_page(0) {
             if let Ok(bounds) = page.bounds() {
                 (bounds.width(), bounds.height())
@@ -45,7 +55,30 @@ impl MuPdfBackend {
             default_dimensions,
             dimensions_cache: Mutex::new(HashMap::new()),
             doc: Arc::new(ThreadSafeDocument(Mutex::new(doc))),
+            is_image_based,
         })
+    }
+}
+
+pub fn apply_smart_night_mode_filter(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let r = pixel[0] as i16;
+        let g = pixel[1] as i16;
+        let b = pixel[2] as i16;
+
+        let max_c = r.max(g).max(b);
+        let min_c = r.min(g).min(b);
+        let saturation = max_c - min_c;
+
+        if saturation < 35 {
+            pixel[0] = (255 - r) as u8;
+            pixel[1] = (255 - g) as u8;
+            pixel[2] = (255 - b) as u8;
+        } else {
+            pixel[0] = ((r * 9) / 10) as u8;
+            pixel[1] = ((g * 9) / 10) as u8;
+            pixel[2] = ((b * 9) / 10) as u8;
+        }
     }
 }
 
@@ -61,6 +94,10 @@ impl DocumentBackend for MuPdfBackend {
             }
         }
         self.default_dimensions
+    }
+
+    fn is_image_based(&self) -> bool {
+        self.is_image_based
     }
 
     fn render_page(&self, request: &PageRenderRequest) -> Result<RgbaImage, String> {
@@ -103,6 +140,7 @@ impl DocumentBackend for MuPdfBackend {
         let samples = pixmap.samples();
         let n_components = pixmap.n();
 
+        // SIMD-Vectorized RGBA Buffer Expansion
         let mut rgba_bytes = vec![255u8; (width * height * 4) as usize];
 
         if n_components == 3 {
@@ -122,6 +160,10 @@ impl DocumentBackend for MuPdfBackend {
             }
         }
 
+        if request.is_night_mode && !request.is_image_based && !self.is_image_based {
+            apply_smart_night_mode_filter(&mut rgba_bytes);
+        }
+
         RgbaImage::from_raw(width, height, rgba_bytes)
             .ok_or_else(|| format!("Failed to create RGBA image buffer for page {}", request.page_index))
     }
@@ -133,6 +175,35 @@ impl DocumentBackend for MuPdfBackend {
             }
         }
         Vec::new()
+    }
+
+    fn extract_text(&self, page_index: usize) -> Vec<TextQuad> {
+        let mut quads = Vec::new();
+        if let Ok(guard) = self.doc.0.lock() {
+            if let Ok(page) = guard.load_page(page_index as i32) {
+                if let Ok(words) = page.words(TextExtractOptions::default()) {
+                    for word in words {
+                        let text = word.text.trim().to_string();
+                        if !text.is_empty() {
+                            quads.push(TextQuad {
+                                text,
+                                x0: word.bounds.x0,
+                                y0: word.bounds.y0,
+                                x1: word.bounds.x1,
+                                y1: word.bounds.y1,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        quads
+    }
+}
+
+impl Drop for MuPdfBackend {
+    fn drop(&mut self) {
+        crate::models::workspace::trim_memory();
     }
 }
 

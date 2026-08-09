@@ -9,6 +9,8 @@ use crate::ui::components::viewer::render_document_viewer;
 impl ReaderApp {
     pub fn view(&self) -> Element<Message> {
         let active_id = self.active_tab_id.unwrap_or(0);
+        let theme_mode = self.settings.theme;
+        let is_night_mode = self.settings.is_night_mode;
 
         let settings_btn = button(text("⚙").size(16))
             .on_press(Message::OpenSettings)
@@ -33,9 +35,9 @@ impl ReaderApp {
         let primary_view: Element<Message> = if self.tabs.is_empty() {
             container(
                 column![
-                    text("📚 Multi-Format Document Reader").size(24),
+                    text("Multi-Format Document Reader").size(24),
                     text("Support for PDF, EPUB, DOCX, DJVU, XPS, MOBI, CBZ, FB2").size(14),
-                    button(text("📂 Open Document (Ctrl + O)"))
+                    button(text("Open Document (Ctrl + O)"))
                         .on_press(Message::OpenFileRequested)
                         .padding([10.0, 20.0])
                 ]
@@ -46,7 +48,7 @@ impl ReaderApp {
             .center_y(Length::Fill)
             .into()
         } else if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
-            render_document_viewer(tab)
+            render_document_viewer(tab, theme_mode, is_night_mode)
         } else {
             container(text("Select a Tab").size(18))
                 .center_x(Length::Fill)
@@ -58,7 +60,7 @@ impl ReaderApp {
             if let Some(sec_tab) = self.tabs.iter().find(|t| t.id == sec_id) {
                 row![
                     primary_view,
-                    render_document_viewer(sec_tab)
+                    render_document_viewer(sec_tab, theme_mode, is_night_mode)
                 ]
                 .spacing(10)
                 .into()
@@ -72,7 +74,7 @@ impl ReaderApp {
         let content_with_error: Element<Message> = if let Some(ref err) = self.error_message {
             let error_banner = container(
                 row![
-                    text(format!("⚠️ {}", err)).size(13),
+                    text(format!("Error: {}", err)).size(13),
                     button(text("✕").size(12)).on_press(Message::ClearError)
                 ]
                 .spacing(10)
@@ -112,7 +114,6 @@ impl ReaderApp {
             column![content_with_error].into()
         };
 
-        // Persistent stack root guarantees base_layout never unmounts
         if self.is_settings_open {
             iced::widget::stack![
                 base_layout,

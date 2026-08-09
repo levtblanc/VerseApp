@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use crate::engine::traits::{DocumentBackend, RenderQuality};
 use crate::models::session::SidePanelTab;
+use crate::models::workspace::SearchMatch;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -24,6 +25,21 @@ pub enum Message {
     TogglePageLayout(usize),
     ToggleContinuous(usize),
 
+    // Text Selection & Clipboard Messages
+    StartTextSelection { page_index: usize, x: f32, y: f32 },
+    UpdateTextSelection { page_index: usize, x: f32, y: f32 },
+    EndTextSelection,
+    CopySelectedText,
+
+    // Document Search Messages
+    ToggleSearch,
+    CloseSearch,
+    SearchQueryChanged(String),
+    SearchCompleted { tab_id: usize, query: String, matches: Vec<SearchMatch> },
+    ToggleSearchMatchCase,
+    NextSearchMatch,
+    PrevSearchMatch,
+
     ToggleSidePanel(usize),
     ToggleSidePanelPin(usize),
     SetSidePanelTab(usize, SidePanelTab),
@@ -42,6 +58,7 @@ pub enum Message {
     CloseSettings,
     StartRemapping(crate::models::session::Action),
     ToggleTheme,
+    ToggleNightMode,
     ClearError,
 
     EventOccurred(iced::Event),

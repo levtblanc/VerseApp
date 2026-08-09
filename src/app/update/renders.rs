@@ -5,6 +5,7 @@ use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
 use crate::engine::traits::RenderQuality;
 use crate::models::session::SidePanelTab;
+use crate::models::workspace::trim_memory;
 
 impl ReaderApp {
     pub fn handle_page_render_finished(
@@ -14,6 +15,14 @@ impl ReaderApp {
         quality: RenderQuality,
         result: Result<(Handle, u32, u32), String>,
     ) -> Task<Message> {
+        let tab_exists = self.tabs.iter().any(|t| t.id == tab_id);
+
+        if !tab_exists {
+            // Tab was closed while background render was in progress -> reclaim OS kernel memory
+            trim_memory();
+            return Task::none();
+        }
+
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             tab.loading_pages.remove(&page_index);
             match result {
@@ -35,6 +44,14 @@ impl ReaderApp {
         page_index: usize,
         result: Result<Handle, String>,
     ) -> Task<Message> {
+        let tab_exists = self.tabs.iter().any(|t| t.id == tab_id);
+
+        if !tab_exists {
+            // Tab was closed while background thumbnail render was in progress -> reclaim OS memory
+            trim_memory();
+            return Task::none();
+        }
+
         let mut follow_up_task = Task::none();
 
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {

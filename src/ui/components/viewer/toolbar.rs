@@ -2,7 +2,7 @@ use iced::widget::{button, container, row, text, text_input};
 use iced::{Alignment, Color, Element, Length};
 
 use crate::app::messages::Message;
-use crate::models::session::PageLayout;
+use crate::models::session::{PageLayout, ThemeMode};
 use crate::models::workspace::RuntimeTab;
 
 pub fn control_button_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
@@ -43,7 +43,11 @@ pub fn page_input_style(_theme: &iced::Theme, status: text_input::Status) -> tex
     }
 }
 
-pub fn render_control_tray<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
+pub fn render_control_tray<'a>(
+    tab: &'a RuntimeTab,
+    theme_mode: ThemeMode,
+    is_night_mode: bool,
+) -> Element<'a, Message> {
     let tab_id = tab.id;
     let label_color = Color::from_rgb(0.90, 0.92, 0.96);
 
@@ -109,12 +113,37 @@ pub fn render_control_tray<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         .padding([4, 10])
         .style(control_button_style);
 
-    let theme_btn = button(text("🌓 Theme").size(12).color(label_color))
+    let theme_text = match theme_mode {
+        ThemeMode::Light => "☀️ Light",
+        ThemeMode::Dark => "🌓 Dark",
+    };
+    let theme_btn = button(text(theme_text).size(12).color(label_color))
         .on_press(Message::ToggleTheme)
         .padding([4, 10])
         .style(control_button_style);
 
-    let toolbar = row![
+    let night_text = if is_night_mode { "🌙 Night: ON" } else { "☀️ Night: OFF" };
+    let night_btn = button(text(night_text).size(12).color(if is_night_mode { Color::from_rgb(0.48, 0.72, 0.98) } else { label_color }))
+        .on_press(Message::ToggleNightMode)
+        .padding([4, 10])
+        .style(move |theme, status| {
+            if is_night_mode {
+                button::Style {
+                    background: Some(Color::from_rgb(0.20, 0.28, 0.42).into()),
+                    text_color: Color::from_rgb(0.48, 0.72, 0.98),
+                    border: iced::Border {
+                        color: Color::from_rgb(0.38, 0.58, 0.92),
+                        width: 1.0,
+                        radius: 6.0.into(),
+                    },
+                    ..Default::default()
+                }
+            } else {
+                control_button_style(theme, status)
+            }
+        });
+
+    let mut toolbar = row![
         side_panel_btn,
         prev_btn,
         page_indicator,
@@ -124,10 +153,28 @@ pub fn render_control_tray<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         zoom_in_btn,
         layout_btn,
         continuous_btn,
+        night_btn,
         theme_btn,
     ]
     .spacing(8)
     .align_y(Alignment::Center);
+
+    if !tab.selected_text.is_empty() {
+        let copy_btn = button(text("Copy Text").size(12).color(Color::from_rgb(0.48, 0.72, 0.98)))
+            .on_press(Message::CopySelectedText)
+            .padding([4, 10])
+            .style(|_theme, _status| button::Style {
+                background: Some(Color::from_rgb(0.18, 0.28, 0.45).into()),
+                text_color: Color::from_rgb(0.48, 0.72, 0.98),
+                border: iced::Border {
+                    color: Color::from_rgb(0.38, 0.58, 0.92),
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            });
+        toolbar = toolbar.push(copy_btn);
+    }
 
     container(toolbar)
         .padding([4, 12])

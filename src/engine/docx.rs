@@ -19,11 +19,9 @@ impl DocxBackend {
         let file = File::open(path).map_err(|e| format!("Failed to open DOCX file '{}': {}", path.display(), e))?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid DOCX archive '{}': {}", path.display(), e))?;
 
-        // Unique temporary directory for HTML and extracted media
         let temp_dir = std::env::temp_dir().join(format!("verse_docx_{}", uuid_simple()));
         fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
-        // Step 1: Parse relationships (word/_rels/document.xml.rels) for images
         let mut rels_map: HashMap<String, String> = HashMap::new();
         if let Ok(mut rels_file) = archive.by_name("word/_rels/document.xml.rels") {
             let mut rels_bytes = Vec::new();
@@ -39,7 +37,6 @@ impl DocxBackend {
             }
         }
 
-        // Step 2: Extract embedded media images (word/media/*) to temp directory
         for i in 0..archive.len() {
             if let Ok(mut zip_file) = archive.by_index(i) {
                 let name = zip_file.name().to_string();
@@ -54,7 +51,6 @@ impl DocxBackend {
             }
         }
 
-        // Step 3: Parse document text & structure (word/document.xml)
         let mut body_html = String::new();
         if let Ok(mut doc_file) = archive.by_name("word/document.xml") {
             let mut doc_bytes = Vec::new();
@@ -68,7 +64,6 @@ impl DocxBackend {
             body_html.push_str("<p><em>Empty Word Document</em></p>");
         }
 
-        // Step 4: Construct complete HTML document with clean reader CSS
         let full_html = format!(
             r#"<!DOCTYPE html>
 <html>
@@ -94,7 +89,7 @@ impl DocxBackend {
     u {{ text-decoration: underline; }}
     ul, ol {{ margin-top: 0; margin-bottom: 1em; padding-left: 24px; }}
     li {{ margin-bottom: 0.3em; }}
-    img {{ max-width: 100%; height: auto; display: block; margin: 1.2em auto; border-radius: 4px; }}
+    img {{ max-width: 100%; height: auto; display: block; margin: 1.2em auto; border-radius: 4px; filter: none !important; }}
     table {{ border-collapse: collapse; width: 100%; margin: 1.2em 0; }}
     td, th {{ border: 1px solid #d0d4dc; padding: 8px 12px; text-align: left; }}
     th {{ background-color: #f0f3f8; font-weight: bold; }}
@@ -110,7 +105,6 @@ impl DocxBackend {
         let html_path = temp_dir.join("index.html");
         fs::write(&html_path, full_html).map_err(|e| format!("Failed to write temp HTML: {}", e))?;
 
-        // Step 5: Delegate vector rendering to MuPDF Fitz HTML engine
         let mupdf_backend = MuPdfBackend::open(&html_path)?;
 
         Ok(Self {
@@ -141,8 +135,8 @@ impl DocumentBackend for DocxBackend {
 
 impl Drop for DocxBackend {
     fn drop(&mut self) {
-        // Automatically clean up temporary HTML and extracted image files on tab close
         let _ = fs::remove_dir_all(&self.temp_dir);
+        crate::models::workspace::trim_memory();
     }
 }
 
@@ -154,8 +148,6 @@ impl std::fmt::Debug for DocxBackend {
             .finish()
     }
 }
-
-// --- Helper Functions for Lightweight XML Parsing ---
 
 fn uuid_simple() -> u128 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -194,7 +186,6 @@ fn parse_docx_xml_to_html(xml: &str, rels: &HashMap<String, String>) -> String {
 
         let mut p_content = String::new();
 
-        // Check for embedded drawings/images in paragraph
         if p_chunk.contains("<w:drawing") || p_chunk.contains("r:embed=") {
             for id in rels.keys() {
                 if p_chunk.contains(&format!("r:embed=\"{}\"", id)) || p_chunk.contains(&format!("r:id=\"{}\"", id)) {
@@ -207,7 +198,6 @@ fn parse_docx_xml_to_html(xml: &str, rels: &HashMap<String, String>) -> String {
             }
         }
 
-        // Parse text runs (<w:r>)
         for r_chunk in p_chunk.split("<w:r") {
             if r_chunk.trim().is_empty() { continue; }
 

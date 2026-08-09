@@ -32,7 +32,6 @@ impl ReaderApp {
             if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                 let mut tasks = Vec::new();
 
-                // 1. Restore continuous main document scroll position after layout shift
                 if tab.is_continuous {
                     let target_y = tab.y_offset_for_page(tab.current_page);
                     tasks.push(scrollable::scroll_to(
@@ -41,7 +40,6 @@ impl ReaderApp {
                     ));
                 }
 
-                // 2. Restore side panel thumbnail scroll position if open
                 if tab.is_side_panel_open {
                     let side_thumb_y = tab.side_panel_thumb_y(tab.current_page);
                     tasks.push(scrollable::scroll_to(
@@ -124,6 +122,22 @@ impl ReaderApp {
             ThemeMode::Dark => ThemeMode::Light,
         };
         self.save_session();
+        Task::none()
+    }
+
+    pub fn handle_toggle_night_mode(&mut self) -> Task<Message> {
+        self.settings.is_night_mode = !self.settings.is_night_mode;
+        self.save_session();
+
+        // Clear in-memory page textures & thumbnails to trigger re-renders under Night/Normal mode
+        for tab in &mut self.tabs {
+            tab.texture_cache.clear();
+            tab.thumbnail_cache.clear();
+        }
+
+        if let Some(active_id) = self.active_tab_id {
+            return self.request_missing_page_renders(active_id);
+        }
         Task::none()
     }
 

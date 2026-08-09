@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidePanelTab {
@@ -16,6 +16,9 @@ pub enum Action {
     NextPage,
     PrevPage,
     ToggleTheme,
+    ToggleNightMode,
+    CopySelectedText,
+    OpenSearch,
     OpenSettings,
     CloseActiveTab,
     TogglePageLayout,
@@ -35,7 +38,10 @@ impl Action {
             Action::ZoomOut => "Zoom Out",
             Action::NextPage => "Next Page",
             Action::PrevPage => "Previous Page",
-            Action::ToggleTheme => "Toggle Theme",
+            Action::ToggleTheme => "Toggle UI Theme (Light / Dark)",
+            Action::ToggleNightMode => "Toggle Page Night Mode (ON / OFF)",
+            Action::CopySelectedText => "Copy Selected Text (Ctrl+C)",
+            Action::OpenSearch => "Search Document (Ctrl+F)",
             Action::OpenSettings => "Open Settings",
             Action::CloseActiveTab => "Close Active Tab",
             Action::TogglePageLayout => "Toggle Single/Double View",
@@ -60,7 +66,12 @@ pub struct KeyBinding {
 
 impl KeyBinding {
     pub fn new(key: &str, ctrl: bool, shift: bool, alt: bool) -> Self {
-        Self { key: key.to_string(), ctrl, shift, alt }
+        Self {
+            key: key.to_string(),
+            ctrl,
+            shift,
+            alt,
+        }
     }
 
     pub fn to_display_string(&self) -> String {
@@ -82,6 +93,7 @@ pub enum ThemeMode { Light, Dark }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppSettings {
     pub theme: ThemeMode,
+    pub is_night_mode: bool,
     pub default_zoom: f32,
     pub keybindings: HashMap<Action, KeyBinding>,
 }
@@ -90,12 +102,15 @@ impl Default for AppSettings {
     fn default() -> Self {
         let mut keybindings = HashMap::new();
         keybindings.insert(Action::OpenFile, KeyBinding::new("O", true, false, false));
+        keybindings.insert(Action::OpenSearch, KeyBinding::new("F", true, false, false));
         keybindings.insert(Action::NextTab, KeyBinding::new("Tab", true, false, false));
         keybindings.insert(Action::PrevTab, KeyBinding::new("Tab", true, true, false));
         keybindings.insert(Action::CloseActiveTab, KeyBinding::new("W", true, false, false));
         keybindings.insert(Action::ToggleTabBar, KeyBinding::new("B", true, false, false));
         keybindings.insert(Action::ToggleFullscreen, KeyBinding::new("F11", false, false, false));
         keybindings.insert(Action::ToggleSidePanel, KeyBinding::new("N", true, false, false));
+        keybindings.insert(Action::ToggleNightMode, KeyBinding::new("N", true, true, false));
+        keybindings.insert(Action::CopySelectedText, KeyBinding::new("C", true, false, false));
         keybindings.insert(Action::ZoomIn, KeyBinding::new("Equal", true, false, false));
         keybindings.insert(Action::ZoomOut, KeyBinding::new("Minus", true, false, false));
         keybindings.insert(Action::NextPage, KeyBinding::new("Down", false, false, false));
@@ -105,7 +120,12 @@ impl Default for AppSettings {
         keybindings.insert(Action::ToggleTheme, KeyBinding::new("T", true, false, false));
         keybindings.insert(Action::OpenSettings, KeyBinding::new("Comma", true, false, false));
 
-        Self { theme: ThemeMode::Dark, default_zoom: 1.0, keybindings }
+        Self {
+            theme: ThemeMode::Dark,
+            is_night_mode: false,
+            default_zoom: 1.0,
+            keybindings,
+        }
     }
 }
 

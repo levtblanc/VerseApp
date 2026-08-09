@@ -32,6 +32,21 @@ impl ReaderApp {
             Message::TogglePageLayout(tab_id) => self.handle_toggle_page_layout(tab_id),
             Message::ToggleContinuous(tab_id) => self.handle_toggle_continuous(tab_id),
 
+            // Text Selection & Clipboard
+            Message::StartTextSelection { page_index, x, y } => self.handle_start_text_selection(page_index, x, y),
+            Message::UpdateTextSelection { page_index, x, y } => self.handle_update_text_selection(page_index, x, y),
+            Message::EndTextSelection => self.handle_end_text_selection(),
+            Message::CopySelectedText => self.handle_copy_selected_text(),
+
+            // Document Search
+            Message::ToggleSearch => self.handle_toggle_search(),
+            Message::CloseSearch => self.handle_close_search(),
+            Message::SearchQueryChanged(query) => self.handle_search_query_changed(query),
+            Message::SearchCompleted { tab_id, query, matches } => self.handle_search_completed(tab_id, query, matches),
+            Message::ToggleSearchMatchCase => self.handle_toggle_search_match_case(),
+            Message::NextSearchMatch => self.handle_next_search_match(),
+            Message::PrevSearchMatch => self.handle_prev_search_match(),
+
             // Side Panel
             Message::ToggleSidePanel(tab_id) => self.handle_toggle_side_panel(tab_id),
             Message::ToggleSidePanelPin(tab_id) => self.handle_toggle_side_panel_pin(tab_id),
@@ -46,6 +61,7 @@ impl ReaderApp {
             Message::CloseSettings => self.handle_close_settings(),
             Message::StartRemapping(action) => self.handle_start_remapping(action),
             Message::ToggleTheme => self.handle_toggle_theme(),
+            Message::ToggleNightMode => self.handle_toggle_night_mode(),
             Message::ClearError => self.handle_clear_error(),
             Message::EventOccurred(event) => self.handle_event_occurred(event),
 

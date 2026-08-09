@@ -1,13 +1,17 @@
 use iced::keyboard::Modifiers;
-use iced::window;
 use iced::{Subscription, Task, Theme};
+use std::time::Instant;
+
 use crate::app::messages::Message;
 use crate::app::tasks::get_disk_cache;
 use crate::engine::load_document;
 use crate::models::disk_cache::UsefulCacheEntry;
 use crate::models::session::{AppSettings, FileHistoryRecord, SessionData};
-use crate::models::workspace::RuntimeTab;
+use crate::models::workspace::{trim_memory, RuntimeTab};
 use crate::ui::theme::get_iced_theme;
+
+const INACTIVE_COOLDOWN_SECS: u64 = 180; // 3 minutes soft retention in RAM
+const TOTAL_APP_RAM_BUDGET_BYTES: usize = 60 * 1024 * 1024; // 60 MB global memory budget across all tabs
 
 pub struct ReaderApp {
     pub settings: AppSettings,
@@ -110,13 +114,60 @@ impl ReaderApp {
         (app, Task::batch(initial_tasks))
     }
 
+    /// Smart Multi-Tab Memory Management:
+    /// - Keeps recently viewed tabs (<3 mins) 100% intact in RAM for instant 0ms tab switching.
+    /// - Only evicts background tabs if total RAM allocation across all tabs exceeds 60 MB
+    ///   or if a tab has been untouched for > 3 minutes.
     pub fn purge_all_inactive_tabs(&mut self) {
         let active_id = self.active_tab_id;
-        for tab in &mut self.tabs {
-            if Some(tab.id) != active_id {
-                tab.purge_inactive_cache();
+        let now = Instant::now();
+
+        // 1. Enforce active tab budget
+        if let Some(active_id) = active_id {
+            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
+                tab.enforce_memory_budget();
             }
         }
+
+        // 2. Check total RAM usage across all open tabs
+        let total_ram: usize = self.tabs.iter().map(|t| t.total_texture_ram_bytes()).sum();
+
+        if total_ram > TOTAL_APP_RAM_BUDGET_BYTES {
+            // Evict oldest background tabs first until memory drops below budget
+            let mut inactive_indices: Vec<usize> = self.tabs.iter()
+                .enumerate()
+                .filter(|(_, t)| Some(t.id) != active_id)
+                .map(|(idx, _)| idx)
+                .collect();
+
+            inactive_indices.sort_by_key(|&idx| self.tabs[idx].last_accessed);
+
+            for idx in inactive_indices {
+                let current_total: usize = self.tabs.iter().map(|t| t.total_texture_ram_bytes()).sum();
+                if current_total <= TOTAL_APP_RAM_BUDGET_BYTES {
+                    break;
+                }
+
+                let elapsed = now.duration_since(self.tabs[idx].last_accessed).as_secs();
+                if elapsed < INACTIVE_COOLDOWN_SECS {
+                    self.tabs[idx].retain_only_current_page();
+                } else {
+                    self.tabs[idx].offload_completely_from_ram();
+                }
+            }
+        } else {
+            // Total memory is well within budget: Only offload truly stale tabs (> 3 mins)
+            for tab in &mut self.tabs {
+                if Some(tab.id) != active_id {
+                    let elapsed = now.duration_since(tab.last_accessed).as_secs();
+                    if elapsed >= INACTIVE_COOLDOWN_SECS {
+                        tab.offload_completely_from_ram();
+                    }
+                }
+            }
+        }
+
+        trim_memory();
     }
 
     pub fn theme(&self) -> Theme {
@@ -142,7 +193,6 @@ impl ReaderApp {
             side_panel_tab: t.side_panel_tab,
         }).collect();
 
-        // Perform Smart Disk Cache Cleanup on exit/session save
         let useful_entries: Vec<UsefulCacheEntry> = self.tabs.iter().map(|t| UsefulCacheEntry {
             file_path: t.file_path.clone(),
             current_page: t.current_page,
@@ -161,5 +211,6 @@ impl ReaderApp {
 
         session.active_tab_index = self.active_tab_id.unwrap_or(0);
         let _ = session.save();
+        trim_memory();
     }
 }

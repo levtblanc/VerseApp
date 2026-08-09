@@ -41,8 +41,7 @@ pub fn render_settings_modal<'a>(
     .align_y(Alignment::Center)
     .width(Length::Fill);
 
-    // --- Theme Switcher Section ---
-    let theme_label = text("Theme Mode").size(14).color(text_primary);
+    let theme_label = text("UI Theme").size(14).color(text_primary);
     let theme_val_label = match settings.theme {
         ThemeMode::Dark => "🌓 Dark Theme",
         ThemeMode::Light => "☀️ Light Theme",
@@ -83,7 +82,47 @@ pub fn render_settings_modal<'a>(
         ..Default::default()
     });
 
-    // --- Keybindings List ---
+    let night_label = text("Page Night Mode").size(14).color(text_primary);
+    let night_val_label = if settings.is_night_mode { "🌙 Night Mode: ON" } else { "☀️ Night Mode: OFF" };
+    let night_toggle_btn = button(text(night_val_label).size(12).color(if settings.is_night_mode { Color::from_rgb(0.48, 0.72, 0.98) } else { text_primary }))
+        .on_press(Message::ToggleNightMode)
+        .padding([6, 12])
+        .style(|_theme, status| {
+            let bg = if settings.is_night_mode {
+                Color::from_rgb(0.20, 0.28, 0.42)
+            } else if matches!(status, button::Status::Hovered) {
+                Color::from_rgb(0.28, 0.30, 0.36)
+            } else {
+                Color::from_rgb(0.20, 0.22, 0.26)
+            };
+            button::Style {
+                background: Some(bg.into()),
+                text_color: if settings.is_night_mode { Color::from_rgb(0.48, 0.72, 0.98) } else { Color::from_rgb(0.95, 0.95, 0.98) },
+                border: iced::Border {
+                    color: Color::from_rgb(0.30, 0.32, 0.38),
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            }
+        });
+
+    let night_card = container(
+        row![night_label, container(night_toggle_btn).align_x(Alignment::End).width(Length::Fill)]
+            .align_y(Alignment::Center)
+            .width(Length::Fill)
+    )
+    .padding(12)
+    .style(|_| container::Style {
+        background: Some(Color::from_rgb(0.16, 0.17, 0.20).into()),
+        border: iced::Border {
+            color: Color::from_rgb(0.24, 0.26, 0.30),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..Default::default()
+    });
+
     let mut keybindings_col = column![].spacing(6).width(Length::Fill);
 
     let key_actions = vec![
@@ -101,6 +140,9 @@ pub fn render_settings_modal<'a>(
         Action::ZoomOut,
         Action::ToggleFullscreen,
         Action::ToggleTheme,
+        Action::ToggleNightMode,
+        Action::CopySelectedText,
+        Action::OpenSearch,
         Action::OpenSettings,
     ];
 
@@ -170,16 +212,17 @@ pub fn render_settings_modal<'a>(
 
     let scrollable_keymaps = scrollable(keybindings_col)
         .style(transparent_scrollable_style)
-        .height(Length::Fixed(340.0));
+        .height(Length::Fixed(280.0));
 
     let modal_card = container(
         column![
             header_row,
             theme_card,
+            night_card,
             text("Keyboard Shortcuts").size(14).color(text_primary),
             scrollable_keymaps
         ]
-        .spacing(14)
+        .spacing(12)
         .align_x(Alignment::Center)
     )
     .width(Length::Fixed(520.0))

@@ -6,6 +6,7 @@ use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
 use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality};
 use crate::models::disk_cache::DiskCache;
+use crate::models::workspace::SearchMatch;
 
 static GLOBAL_DISK_CACHE: LazyLock<DiskCache> = LazyLock::new(DiskCache::new);
 const MAX_CONCURRENT_THUMBNAILS: usize = 4;
@@ -14,23 +15,76 @@ pub fn get_disk_cache() -> &'static DiskCache {
     &GLOBAL_DISK_CACHE
 }
 
+pub fn spawn_search_task(
+    tab_id: usize,
+    backend: Arc<dyn DocumentBackend>,
+    page_count: usize,
+    query: String,
+    match_case: bool,
+) -> Task<Message> {
+    Task::perform(
+        async move {
+            let query_trimmed = query.trim().to_string();
+            if query_trimmed.is_empty() {
+                return (tab_id, query_trimmed, Vec::new());
+            }
+
+            let query_for_error = query_trimmed.clone();
+
+            tokio::task::spawn_blocking(move || {
+                let mut matches = Vec::new();
+                let query_cmp = if match_case {
+                    query_trimmed.clone()
+                } else {
+                    query_trimmed.to_lowercase()
+                };
+
+                for page_idx in 0..page_count {
+                    let quads = backend.extract_text(page_idx);
+                    for quad in quads {
+                        let quad_text = if match_case {
+                            quad.text.clone()
+                        } else {
+                            quad.text.to_lowercase()
+                        };
+
+                        if quad_text.contains(&query_cmp) {
+                            matches.push(SearchMatch {
+                                page_index: page_idx,
+                                quad,
+                            });
+                        }
+                    }
+                }
+                (tab_id, query_trimmed, matches)
+            })
+            .await
+            .unwrap_or_else(|_| (tab_id, query_for_error, Vec::new()))
+        },
+        |(tab_id, query, matches)| Message::SearchCompleted { tab_id, query, matches },
+    )
+}
+
 pub fn spawn_render_task(
     tab_id: usize,
     file_path: PathBuf,
     page_index: usize,
     zoom: f32,
     quality: RenderQuality,
+    is_night_mode: bool,
     backend: Arc<dyn DocumentBackend>,
 ) -> Task<Message> {
     Task::perform(
         async move {
-            let quality_tag = match quality {
+            let is_image_doc = backend.is_image_based();
+            let prefix = if is_night_mode && !is_image_doc { "night_" } else { "" };
+            let quality_tag = format!("{}{}", prefix, match quality {
                 RenderQuality::Fuzzy => "fuzzy",
                 RenderQuality::Draft => "draft",
                 RenderQuality::High => "high",
-            };
+            });
 
-            if let Some((handle, w, h)) = GLOBAL_DISK_CACHE.get_page(&file_path, page_index, zoom, quality_tag) {
+            if let Some((handle, w, h)) = GLOBAL_DISK_CACHE.get_page(&file_path, page_index, zoom, &quality_tag) {
                 return Ok((handle, w, h));
             }
 
@@ -40,6 +94,8 @@ pub fn spawn_render_task(
                 rotation: 0,
                 quality,
                 max_dimensions: Some((3840, 3840)),
+                is_night_mode,
+                is_image_based: is_image_doc,
             };
             tokio::task::spawn_blocking(move || {
                 let rgba = backend.render_page(&req)?;
@@ -47,7 +103,7 @@ pub fn spawn_render_task(
                 let h = rgba.height();
                 let raw_bytes = rgba.as_raw();
 
-                GLOBAL_DISK_CACHE.save_page(&file_path, page_index, zoom, quality_tag, raw_bytes, w, h);
+                GLOBAL_DISK_CACHE.save_page(&file_path, page_index, zoom, &quality_tag, raw_bytes, w, h);
 
                 let handle = Handle::from_rgba(w, h, rgba.into_raw());
                 Ok((handle, w, h))
@@ -63,11 +119,14 @@ pub fn spawn_thumbnail_render_task(
     tab_id: usize,
     file_path: PathBuf,
     page_index: usize,
+    is_night_mode: bool,
     backend: Arc<dyn DocumentBackend>,
 ) -> Task<Message> {
     Task::perform(
         async move {
-            if let Some((handle, _, _)) = GLOBAL_DISK_CACHE.get_page(&file_path, page_index, 0.5, "thumb") {
+            let is_image_doc = backend.is_image_based();
+            let thumb_tag = if is_night_mode && !is_image_doc { "night_thumb" } else { "thumb" };
+            if let Some((handle, _, _)) = GLOBAL_DISK_CACHE.get_page(&file_path, page_index, 0.5, thumb_tag) {
                 return Ok(handle);
             }
 
@@ -77,12 +136,14 @@ pub fn spawn_thumbnail_render_task(
                 rotation: 0,
                 quality: RenderQuality::Draft,
                 max_dimensions: Some((300, 400)),
+                is_night_mode,
+                is_image_based: is_image_doc,
             };
             tokio::task::spawn_blocking(move || {
                 let rgba = backend.render_page(&req)?;
                 let w = rgba.width();
                 let h = rgba.height();
-                GLOBAL_DISK_CACHE.save_page(&file_path, page_index, 0.5, "thumb", rgba.as_raw(), w, h);
+                GLOBAL_DISK_CACHE.save_page(&file_path, page_index, 0.5, thumb_tag, rgba.as_raw(), w, h);
 
                 let handle = Handle::from_rgba(w, h, rgba.into_raw());
                 Ok(handle)
@@ -99,7 +160,9 @@ impl ReaderApp {
         self.request_page_renders_with_quality(tab_id, RenderQuality::High)
     }
 
-    pub fn request_page_renders_with_quality(&mut self, tab_id: usize, quality: RenderQuality) -> Task<Message> {
+    pub fn request_page_renders_with_quality(&mut self, tab_id: usize, _quality: RenderQuality) -> Task<Message> {
+        let is_night = self.settings.is_night_mode;
+
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             let requests = tab.required_pages_with_quality();
             let mut tasks = Vec::new();
@@ -121,6 +184,7 @@ impl ReaderApp {
                             page_idx,
                             tab.zoom,
                             target_quality,
+                            is_night,
                             tab.backend.clone(),
                         ));
                     }
@@ -132,6 +196,8 @@ impl ReaderApp {
     }
 
     pub fn request_missing_thumbnail_renders(&mut self, tab_id: usize) -> Task<Message> {
+        let is_night = self.settings.is_night_mode;
+
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             if tab.loading_thumbnails.len() >= MAX_CONCURRENT_THUMBNAILS {
                 return Task::none();
@@ -170,6 +236,7 @@ impl ReaderApp {
                     tab_id,
                     file_path.clone(),
                     page_idx,
+                    is_night,
                     tab.backend.clone(),
                 ));
             }

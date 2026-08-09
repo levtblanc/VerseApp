@@ -1,9 +1,11 @@
-use iced::widget::{column, container, image, row, scrollable, text};
+use iced::widget::canvas::Canvas;
+use iced::widget::{column, container, image, row, scrollable, stack, text};
 use iced::{Alignment, Color, Element, Length};
 
 use crate::app::messages::Message;
 use crate::models::session::PageLayout;
 use crate::models::workspace::RuntimeTab;
+use crate::ui::components::viewer::page_canvas::PageSelectionProgram;
 use crate::ui::theme::transparent_scrollable_style;
 
 pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
@@ -37,10 +39,30 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
 
             if is_in_viewport {
                 let left_view: Element<Message> = if let Some(handle) = tab.get_texture(left_page) {
-                    image(handle.clone())
+                    let img_widget = image(handle.clone())
                         .width(Length::Fixed(left_target_w))
-                        .height(Length::Fixed(left_target_h))
-                        .into()
+                        .height(Length::Fixed(left_target_h));
+
+                    let (selected_quads, search_quads, active_search_quad) = unsafe {
+                        let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
+                        (
+                            (*mutable_tab).get_selected_quads_for_page(left_page),
+                            (*mutable_tab).get_search_matches_for_page(left_page),
+                            (*mutable_tab).get_active_search_match_for_page(left_page),
+                        )
+                    };
+
+                    let selection_canvas = Canvas::new(PageSelectionProgram {
+                        page_index: left_page,
+                        zoom: tab.zoom,
+                        selected_quads,
+                        search_quads,
+                        active_search_quad,
+                    })
+                    .width(Length::Fixed(left_target_w))
+                    .height(Length::Fixed(left_target_h));
+
+                    stack![img_widget, selection_canvas].into()
                 } else {
                     container(text(format!("Loading Page {}...", left_page + 1)).size(12))
                         .width(Length::Fixed(left_target_w))
@@ -65,10 +87,30 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                     let right_target_h = right_h_raw * tab.zoom;
 
                     if let Some(handle) = tab.get_texture(right_page) {
-                        image(handle.clone())
+                        let img_widget = image(handle.clone())
                             .width(Length::Fixed(right_target_w))
-                            .height(Length::Fixed(right_target_h))
-                            .into()
+                            .height(Length::Fixed(right_target_h));
+
+                        let (selected_quads, search_quads, active_search_quad) = unsafe {
+                            let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
+                            (
+                                (*mutable_tab).get_selected_quads_for_page(right_page),
+                                (*mutable_tab).get_search_matches_for_page(right_page),
+                                (*mutable_tab).get_active_search_match_for_page(right_page),
+                            )
+                        };
+
+                        let selection_canvas = Canvas::new(PageSelectionProgram {
+                            page_index: right_page,
+                            zoom: tab.zoom,
+                            selected_quads,
+                            search_quads,
+                            active_search_quad,
+                        })
+                        .width(Length::Fixed(right_target_w))
+                        .height(Length::Fixed(right_target_h));
+
+                        stack![img_widget, selection_canvas].into()
                     } else {
                         container(text(format!("Loading Page {}...", right_page + 1)).size(12))
                             .width(Length::Fixed(right_target_w))
@@ -115,7 +157,8 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             }
         }
 
-        let (dir, container_w) = if approx_pair_width > 1300.0 {
+        // Iced 0.13 Rule: Horizontal scrollable content MUST use Length::Shrink to avoid panic
+        let (dir, container_w) = if approx_pair_width > 1200.0 {
             (
                 scrollable::Direction::Both {
                     vertical: v_scrollbar,
@@ -138,9 +181,13 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             .direction(dir)
             .style(transparent_scrollable_style)
             .id(scrollable::Id::new(format!("viewer_scroll_{}", tab_id)))
-            .on_scroll(move |viewport| Message::ViewportScrolled {
-                tab_id,
-                offset_y: viewport.absolute_offset().y,
+            .on_scroll(move |viewport| {
+                let y = viewport.absolute_offset().y;
+                let safe_y = if y.is_finite() { y.max(0.0) } else { 0.0 };
+                Message::ViewportScrolled {
+                    tab_id,
+                    offset_y: safe_y,
+                }
             })
             .width(Length::Fill)
             .height(Length::Fill);
@@ -174,7 +221,27 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                     let img_widget = image(handle.clone())
                         .width(Length::Fixed(target_w))
                         .height(Length::Fixed(target_h));
-                    pages_col = pages_col.push(img_widget);
+
+                    let (selected_quads, search_quads, active_search_quad) = unsafe {
+                        let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
+                        (
+                            (*mutable_tab).get_selected_quads_for_page(page_idx),
+                            (*mutable_tab).get_search_matches_for_page(page_idx),
+                            (*mutable_tab).get_active_search_match_for_page(page_idx),
+                        )
+                    };
+
+                    let selection_canvas = Canvas::new(PageSelectionProgram {
+                        page_index: page_idx,
+                        zoom: tab.zoom,
+                        selected_quads,
+                        search_quads,
+                        active_search_quad,
+                    })
+                    .width(Length::Fixed(target_w))
+                    .height(Length::Fixed(target_h));
+
+                    pages_col = pages_col.push(stack![img_widget, selection_canvas]);
                 } else {
                     let card = container(text(format!("Loading Page {}...", page_idx + 1)).size(12))
                         .width(Length::Fixed(target_w))
@@ -200,7 +267,8 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             }
         }
 
-        let (dir, container_w) = if approx_page_width > 1300.0 {
+        // Iced 0.13 Rule: Horizontal scrollable content MUST use Length::Shrink to avoid panic
+        let (dir, container_w) = if approx_page_width > 1200.0 {
             (
                 scrollable::Direction::Both {
                     vertical: v_scrollbar,
@@ -223,9 +291,13 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             .direction(dir)
             .style(transparent_scrollable_style)
             .id(scrollable::Id::new(format!("viewer_scroll_{}", tab_id)))
-            .on_scroll(move |viewport| Message::ViewportScrolled {
-                tab_id,
-                offset_y: viewport.absolute_offset().y,
+            .on_scroll(move |viewport| {
+                let y = viewport.absolute_offset().y;
+                let safe_y = if y.is_finite() { y.max(0.0) } else { 0.0 };
+                Message::ViewportScrolled {
+                    tab_id,
+                    offset_y: safe_y,
+                }
             })
             .width(Length::Fill)
             .height(Length::Fill);

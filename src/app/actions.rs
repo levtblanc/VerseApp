@@ -61,6 +61,8 @@ impl ReaderApp {
             Action::OpenFile => return self.update(Message::OpenFileRequested),
             Action::ToggleFullscreen => return self.update(Message::ToggleFullscreen),
             Action::ToggleTabBar => return self.update(Message::ToggleTabBar),
+            Action::CopySelectedText => return self.update(Message::CopySelectedText),
+            Action::OpenSearch => return self.update(Message::ToggleSearch),
             Action::ToggleSidePanel => {
                 if let Some(tab_id) = self.active_tab_id {
                     return self.update(Message::ToggleSidePanel(tab_id));
@@ -131,6 +133,7 @@ impl ReaderApp {
                 }
             }
             Action::ToggleTheme => return self.update(Message::ToggleTheme),
+            Action::ToggleNightMode => return self.update(Message::ToggleNightMode),
             Action::OpenSettings => return self.update(Message::OpenSettings),
             Action::CloseActiveTab => {
                 if let Some(tab_id) = self.active_tab_id {

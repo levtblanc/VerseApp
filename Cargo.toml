@@ -1,27 +1,32 @@
 [package]
 name = "Verse"
-version = "0.1.1"
+version = "0.1.3"
 edition = "2024"
 
 [dependencies]
-# Trimmed dependencies for minimal binary footprint
-tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "sync", "time", "macros"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# GUI Framework (Added "canvas" feature flag)
+iced = { version = "0.13", features = ["image", "tokio", "svg", "canvas"] }
+
+# Document Engine Backends
+mupdf = "0.8"
+djvu = "0.1"
 zip = { version = "2.1", default-features = false, features = ["deflate"] }
+
+# Async Runtime & Image Processing
+tokio = { version = "1.38", default-features = false, features = ["rt-multi-thread", "sync", "time", "macros"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# System Integration & Dialogs
+rfd = "0.15"
+dirs = "5.0"
+
+# Serialization & Session Persistence
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Core GUI and document engines
-iced = { version = "0.13", features = ["image", "tokio", "svg"] }
-rfd = "0.15"
-dirs = "5.0"
-mupdf = "0.8"
-djvu = "0.1"
-
-# Binary size optimization
 [profile.release]
-opt-level = "z"     # Optimize for size
-lto = true          # Fat Link-Time Optimization
-codegen-units = 1   # Maximize LTO optimization scope
-panic = "abort"     # Remove unwinding tables
-strip = true        # Strip debug symbols automatically
+opt-level = "z"        # Maximize size reduction optimizations
+lto = true             # Full Link-Time Optimization across standard library & crates
+codegen-units = 1      # Single codegen unit for optimal global dead-code elimination
+panic = "abort"        # Eliminate stack unwinding tables
+strip = true           # Automatically strip all debug symbols from output binary

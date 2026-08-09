@@ -1,9 +1,11 @@
-use iced::widget::{container, image, row, scrollable, text};
+use iced::widget::canvas::Canvas;
+use iced::widget::{container, image, row, scrollable, stack, text};
 use iced::{Alignment, Color, Element, Length};
 
 use crate::app::messages::Message;
 use crate::models::session::PageLayout;
 use crate::models::workspace::RuntimeTab;
+use crate::ui::components::viewer::page_canvas::PageSelectionProgram;
 use crate::ui::theme::transparent_scrollable_style;
 
 pub fn render_paginated_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
@@ -13,17 +15,38 @@ pub fn render_paginated_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
 
     let (approx_width, page_view): (f32, Element<Message>) = match tab.layout {
         PageLayout::Single => {
-            let (doc_w, doc_h) = tab.backend.page_dimensions(tab.current_page);
+            let page_idx = tab.current_page;
+            let (doc_w, doc_h) = tab.backend.page_dimensions(page_idx);
             let target_w = doc_w * tab.zoom;
             let target_h = doc_h * tab.zoom;
 
-            let view: Element<Message> = if let Some(handle) = tab.get_texture(tab.current_page) {
-                image(handle.clone())
+            let view: Element<Message> = if let Some(handle) = tab.get_texture(page_idx) {
+                let img_widget = image(handle.clone())
                     .width(Length::Fixed(target_w))
-                    .height(Length::Fixed(target_h))
-                    .into()
+                    .height(Length::Fixed(target_h));
+
+                let (selected_quads, search_quads, active_search_quad) = unsafe {
+                    let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
+                    (
+                        (*mutable_tab).get_selected_quads_for_page(page_idx),
+                        (*mutable_tab).get_search_matches_for_page(page_idx),
+                        (*mutable_tab).get_active_search_match_for_page(page_idx),
+                    )
+                };
+
+                let selection_canvas = Canvas::new(PageSelectionProgram {
+                    page_index: page_idx,
+                    zoom: tab.zoom,
+                    selected_quads,
+                    search_quads,
+                    active_search_quad,
+                })
+                .width(Length::Fixed(target_w))
+                .height(Length::Fixed(target_h));
+
+                stack![img_widget, selection_canvas].into()
             } else {
-                container(text(format!("Loading Page {}...", tab.current_page + 1)).size(13))
+                container(text(format!("Loading Page {}...", page_idx + 1)).size(13))
                     .width(Length::Fixed(target_w))
                     .height(Length::Fixed(target_h))
                     .align_x(Alignment::Center)
@@ -51,10 +74,30 @@ pub fn render_paginated_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             let left_target_h = left_h_raw * tab.zoom;
 
             let left_view: Element<Message> = if let Some(handle) = tab.get_texture(left_page) {
-                image(handle.clone())
+                let img_widget = image(handle.clone())
                     .width(Length::Fixed(left_target_w))
-                    .height(Length::Fixed(left_target_h))
-                    .into()
+                    .height(Length::Fixed(left_target_h));
+
+                let (selected_quads, search_quads, active_search_quad) = unsafe {
+                    let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
+                    (
+                        (*mutable_tab).get_selected_quads_for_page(left_page),
+                        (*mutable_tab).get_search_matches_for_page(left_page),
+                        (*mutable_tab).get_active_search_match_for_page(left_page),
+                    )
+                };
+
+                let selection_canvas = Canvas::new(PageSelectionProgram {
+                    page_index: left_page,
+                    zoom: tab.zoom,
+                    selected_quads,
+                    search_quads,
+                    active_search_quad,
+                })
+                .width(Length::Fixed(left_target_w))
+                .height(Length::Fixed(left_target_h));
+
+                stack![img_widget, selection_canvas].into()
             } else {
                 container(text(format!("Page {}", left_page + 1)).size(12))
                     .width(Length::Fixed(left_target_w))
@@ -74,10 +117,30 @@ pub fn render_paginated_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                 let rh = right_h_raw * tab.zoom;
 
                 let r_elem: Element<Message> = if let Some(handle) = tab.get_texture(right_page) {
-                    image(handle.clone())
+                    let img_widget = image(handle.clone())
                         .width(Length::Fixed(rw))
-                        .height(Length::Fixed(rh))
-                        .into()
+                        .height(Length::Fixed(rh));
+
+                    let (selected_quads, search_quads, active_search_quad) = unsafe {
+                        let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
+                        (
+                            (*mutable_tab).get_selected_quads_for_page(right_page),
+                            (*mutable_tab).get_search_matches_for_page(right_page),
+                            (*mutable_tab).get_active_search_match_for_page(right_page),
+                        )
+                    };
+
+                    let selection_canvas = Canvas::new(PageSelectionProgram {
+                        page_index: right_page,
+                        zoom: tab.zoom,
+                        selected_quads,
+                        search_quads,
+                        active_search_quad,
+                    })
+                    .width(Length::Fixed(rw))
+                    .height(Length::Fixed(rh));
+
+                    stack![img_widget, selection_canvas].into()
                 } else {
                     container(text(format!("Page {}", right_page + 1)).size(12))
                         .width(Length::Fixed(rw))
@@ -105,7 +168,7 @@ pub fn render_paginated_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
         }
     };
 
-    let (dir, container_w) = if approx_width > 1300.0 {
+    let (dir, container_w) = if approx_width > 1200.0 {
         (
             scrollable::Direction::Both {
                 vertical: v_scrollbar,
