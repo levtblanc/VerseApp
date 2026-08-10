@@ -56,10 +56,12 @@ pub fn render_control_tray<'a>(
         .padding([4, 10])
         .style(control_button_style);
 
+    // Assign unique text_input ID per tab to prevent widget state bleed
     let page_input_field = text_input("", &tab.page_input_text)
+        .id(text_input::Id::new(format!("page_input_{}", tab_id)))
         .on_input(move |val| Message::PageInputChanged(tab_id, val))
         .on_submit(Message::PageInputSubmitted(tab_id))
-        .width(Length::Fixed(44.0))
+        .width(Length::Fixed(48.0))
         .padding([2, 4])
         .align_x(Alignment::Center)
         .style(page_input_style);

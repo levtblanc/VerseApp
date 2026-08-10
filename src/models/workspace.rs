@@ -433,6 +433,7 @@ impl RuntimeTab {
 
             if let Some(evict_idx) = candidate {
                 self.texture_cache.remove(&evict_idx);
+                trim_memory();
             } else {
                 break;
             }
@@ -475,11 +476,19 @@ impl RuntimeTab {
         self.texture_cache.get(&page_index).map(|c| &c.handle)
     }
 
+    /// Strict Non-Evictable Pages:
+    /// Returns ONLY the currently visible active page(s) so offscreen pre-rendered textures can be evicted by enforce_memory_budget().
     pub fn required_pages(&self) -> Vec<usize> {
-        self.required_pages_with_quality()
-            .into_iter()
-            .map(|(page, _)| page)
-            .collect()
+        let total = self.page_count;
+        if total == 0 {
+            return Vec::new();
+        }
+
+        let mut required = vec![self.current_page];
+        if self.layout == PageLayout::Double && self.current_page + 1 < total {
+            required.push(self.current_page + 1);
+        }
+        required
     }
 
     pub fn required_pages_with_quality(&self) -> Vec<(usize, RenderQuality)> {
