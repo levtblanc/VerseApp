@@ -140,7 +140,6 @@ impl DocumentBackend for MuPdfBackend {
         let samples = pixmap.samples();
         let n_components = pixmap.n();
 
-        // SIMD-Vectorized RGBA Buffer Expansion
         let mut rgba_bytes = vec![255u8; (width * height * 4) as usize];
 
         if n_components == 3 {

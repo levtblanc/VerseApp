@@ -129,7 +129,6 @@ impl ReaderApp {
         self.settings.is_night_mode = !self.settings.is_night_mode;
         self.save_session();
 
-        // Clear in-memory page textures & thumbnails to trigger re-renders under Night/Normal mode
         for tab in &mut self.tabs {
             tab.texture_cache.clear();
             tab.thumbnail_cache.clear();
@@ -148,6 +147,10 @@ impl ReaderApp {
 
     pub fn handle_event_occurred(&mut self, event: iced::Event) -> Task<Message> {
         match event {
+            iced::Event::Window(window::Event::Unfocused) => {
+                self.is_ctrl_down = false;
+                self.purge_all_inactive_tabs();
+            }
             iced::Event::Mouse(iced::mouse::Event::ButtonReleased(_)) => {
                 if self.dragged_tab_id.is_some() {
                     self.dragged_tab_id = None;
@@ -155,9 +158,23 @@ impl ReaderApp {
             }
             iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
                 self.active_modifiers = modifiers;
+                if modifiers.control() || modifiers.command() {
+                    self.is_ctrl_down = true;
+                }
             }
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                let ctrl = modifiers.control() || self.active_modifiers.control();
+                self.active_modifiers = modifiers;
+
+                if matches!(
+                    key,
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Control)
+                        | iced::keyboard::Key::Named(iced::keyboard::key::Named::Super)
+                        | iced::keyboard::Key::Named(iced::keyboard::key::Named::Meta)
+                ) {
+                    self.is_ctrl_down = true;
+                }
+
+                let ctrl = modifiers.control() || modifiers.command() || self.active_modifiers.control() || self.active_modifiers.command() || self.is_ctrl_down;
                 let shift = modifiers.shift() || self.active_modifiers.shift();
                 let alt = modifiers.alt() || self.active_modifiers.alt();
 
@@ -201,17 +218,36 @@ impl ReaderApp {
                     return self.handle_action(action);
                 }
             }
+            iced::Event::Keyboard(iced::keyboard::Event::KeyReleased { key, modifiers, .. }) => {
+                self.active_modifiers = modifiers;
+
+                if matches!(
+                    key,
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Control)
+                        | iced::keyboard::Key::Named(iced::keyboard::key::Named::Super)
+                        | iced::keyboard::Key::Named(iced::keyboard::key::Named::Meta)
+                ) {
+                    self.is_ctrl_down = false;
+                }
+            }
+            // Bulletproof Ctrl + Mouse Wheel & Trackpad Pinch Zooming
             iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
-                if self.active_modifiers.control() {
+                let ctrl_held = self.is_ctrl_down
+                    || self.active_modifiers.control()
+                    || self.active_modifiers.command();
+
+                if ctrl_held {
                     if let Some(tab_id) = self.active_tab_id {
                         if let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) {
-                            let scroll_y = match delta {
-                                iced::mouse::ScrollDelta::Lines { y, .. } => y,
-                                iced::mouse::ScrollDelta::Pixels { y, .. } => y / 35.0,
+                            let scroll_amount = match delta {
+                                iced::mouse::ScrollDelta::Lines { y, .. } => y * 0.15,
+                                iced::mouse::ScrollDelta::Pixels { y, .. } => y * 0.02,
                             };
-                            let delta_zoom = if scroll_y > 0.0 { 0.15 } else { -0.15 };
-                            let new_zoom = (tab.zoom + delta_zoom).clamp(0.2, 5.0);
-                            return self.update(Message::ChangeZoom(tab_id, new_zoom));
+
+                            if scroll_amount.abs() > 0.0001 {
+                                let new_zoom = (tab.zoom * (1.0 + scroll_amount)).clamp(0.2, 5.0);
+                                return self.update(Message::ChangeZoom(tab_id, new_zoom));
+                            }
                         }
                     }
                 }

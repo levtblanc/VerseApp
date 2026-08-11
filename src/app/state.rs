@@ -1,6 +1,5 @@
 use iced::keyboard::Modifiers;
 use iced::{Subscription, Task, Theme};
-use std::time::Instant;
 
 use crate::app::messages::Message;
 use crate::app::tasks::get_disk_cache;
@@ -21,6 +20,7 @@ pub struct ReaderApp {
     pub is_settings_open: bool,
     pub remapping_action: Option<crate::models::session::Action>,
     pub active_modifiers: Modifiers,
+    pub is_ctrl_down: bool,
 
     pub is_fullscreen: bool,
     pub is_tab_bar_visible: bool,
@@ -74,6 +74,7 @@ impl ReaderApp {
             is_settings_open: false,
             remapping_action: None,
             active_modifiers: Modifiers::default(),
+            is_ctrl_down: false,
             is_fullscreen: false,
             is_tab_bar_visible: true,
             error_message: None,
@@ -111,10 +112,6 @@ impl ReaderApp {
         (app, Task::batch(initial_tasks))
     }
 
-    /// Instant RAM Offloading:
-    /// - Active Tab: Enforces a 16 MB budget.
-    /// - Inactive Tabs: Retains ONLY the single active visible page texture in RAM.
-    /// - Memory Reclamation: Calls `trim_memory()` to return freed heap arenas to the OS immediately.
     pub fn purge_all_inactive_tabs(&mut self) {
         let active_id = self.active_tab_id;
 
