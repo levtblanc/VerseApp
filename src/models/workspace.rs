@@ -5,6 +5,7 @@ use std::time::Instant;
 use iced::widget::image;
 use crate::engine::traits::{DocumentBackend, RenderQuality, TextQuad, TocItem};
 use crate::models::session::{PageLayout, SidePanelTab};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const MAX_THUMBNAIL_CACHE_SIZE: usize = 30;
 const TAB_TEXTURE_RAM_BUDGET_BYTES: usize = 16 * 1024 * 1024;
@@ -49,7 +50,7 @@ pub struct RuntimeTab {
     pub title: String,
     pub file_path: PathBuf,
     pub backend: Arc<dyn DocumentBackend>,
-    
+
     pub page_count: usize,
     pub toc: Vec<TocItem>,
 
@@ -57,6 +58,8 @@ pub struct RuntimeTab {
     pub page_input_text: String,
     pub zoom: f32,
     pub viewport_y: f32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
     pub is_zooming: bool,
 
     pub layout: PageLayout,
@@ -78,7 +81,7 @@ pub struct RuntimeTab {
     pub thumbnail_lru_order: VecDeque<usize>,
     pub loading_thumbnails: HashSet<usize>,
 
-    pub text_cache: HashMap<usize, Vec<TextQuad>>,
+    pub text_cache: std::sync::RwLock<HashMap<usize, Vec<TextQuad>>>,
     pub selection_start: Option<(usize, f32, f32)>,
     pub selection_end: Option<(usize, f32, f32)>,
     pub is_selecting: bool,
@@ -89,6 +92,7 @@ pub struct RuntimeTab {
     pub search_match_case: bool,
     pub search_matches: Vec<SearchMatch>,
     pub current_search_idx: usize,
+    pub search_cancel_token: Option<Arc<AtomicBool>>,
 }
 
 impl RuntimeTab {
@@ -120,6 +124,8 @@ impl RuntimeTab {
             page_input_text,
             zoom,
             viewport_y: 0.0,
+            viewport_width: 1200.0,
+            viewport_height: 800.0,
             is_zooming: false,
             layout,
             is_continuous,
@@ -135,7 +141,7 @@ impl RuntimeTab {
             thumbnail_cache: HashMap::new(),
             thumbnail_lru_order: VecDeque::new(),
             loading_thumbnails: HashSet::new(),
-            text_cache: HashMap::new(),
+            text_cache: std::sync::RwLock::new(HashMap::new()),
             selection_start: None,
             selection_end: None,
             is_selecting: false,
@@ -145,6 +151,7 @@ impl RuntimeTab {
             search_match_case: false,
             search_matches: Vec::new(),
             current_search_idx: 0,
+            search_cancel_token: None,
         }
     }
 
@@ -164,7 +171,7 @@ impl RuntimeTab {
         };
 
         for page_idx in 0..self.page_count {
-            let quads = self.get_text_quads(page_idx).to_vec();
+            let quads = self.get_text_quads(page_idx);
             for quad in quads {
                 let quad_text = if self.search_match_case {
                     quad.text.clone()
@@ -182,7 +189,7 @@ impl RuntimeTab {
         }
     }
 
-    pub fn get_search_matches_for_page(&mut self, page_index: usize) -> Vec<TextQuad> {
+    pub fn get_search_matches_for_page(&self, page_index: usize) -> Vec<TextQuad> {
         self.search_matches
             .iter()
             .filter(|m| m.page_index == page_index)
@@ -219,14 +226,24 @@ impl RuntimeTab {
         self.thumbnail_cache.clear();
         self.loading_pages.clear();
         self.loading_thumbnails.clear();
+
+        if let Ok(mut guard) = self.text_cache.write() {
+            guard.clear();
+        }
     }
 
-    pub fn get_text_quads(&mut self, page_index: usize) -> &[TextQuad] {
-        if !self.text_cache.contains_key(&page_index) {
-            let quads = self.backend.extract_text(page_index);
-            self.text_cache.insert(page_index, quads);
+    pub fn get_text_quads(&self, page_index: usize) -> Vec<TextQuad> {
+        if let Ok(guard) = self.text_cache.read() {
+            if let Some(quads) = guard.get(&page_index) {
+                return quads.clone();
+            }
         }
-        self.text_cache.get(&page_index).map(|v| v.as_slice()).unwrap_or(&[])
+
+        let quads = self.backend.extract_text(page_index);
+        if let Ok(mut guard) = self.text_cache.write() {
+            guard.insert(page_index, quads.clone());
+        }
+        quads
     }
 
     pub fn start_selection(&mut self, page_index: usize, x: f32, y: f32) {
@@ -266,7 +283,7 @@ impl RuntimeTab {
             let min_y = y1.min(y2);
             let max_y = y1.max(y2);
 
-            let quads = self.get_text_quads(p1).to_vec();
+            let quads = self.get_text_quads(p1);
             let mut matched = Vec::new();
 
             for quad in quads {
@@ -282,7 +299,8 @@ impl RuntimeTab {
                     } else if is_last_line {
                         quad.x0 <= max_x
                     } else {
-                        true
+                        // In multi-column layouts, ensure intermediate lines overlap horizontally with the selection bounds
+                        quad.x0 <= (max_x + 50.0) && quad.x1 >= (min_x - 50.0)
                     };
 
                     if horizontally_valid {
@@ -297,7 +315,7 @@ impl RuntimeTab {
         }
     }
 
-    pub fn get_selected_quads_for_page(&mut self, page_index: usize) -> Vec<TextQuad> {
+    pub fn get_selected_quads_for_page(&self, page_index: usize) -> Vec<TextQuad> {
         if let (Some((p1, x1, y1)), Some((p2, x2, y2))) = (self.selection_start, self.selection_end) {
             if p1 != page_index || p2 != page_index {
                 return Vec::new();
@@ -308,7 +326,7 @@ impl RuntimeTab {
             let min_y = y1.min(y2);
             let max_y = y1.max(y2);
 
-            let quads = self.get_text_quads(page_index).to_vec();
+            let quads = self.get_text_quads(page_index);
             quads.into_iter()
                 .filter(|quad| {
                     let vertically_aligned = quad.y1 >= min_y && quad.y0 <= max_y;
@@ -326,7 +344,8 @@ impl RuntimeTab {
                     } else if is_last_line {
                         quad.x0 <= max_x
                     } else {
-                        true
+                        // Protect multi-column text from selecting unrelated neighboring columns
+                        quad.x0 <= (max_x + 50.0) && quad.x1 >= (min_x - 50.0)
                     }
                 })
                 .collect()
@@ -476,8 +495,6 @@ impl RuntimeTab {
         self.texture_cache.get(&page_index).map(|c| &c.handle)
     }
 
-    /// Strict Non-Evictable Pages:
-    /// Returns ONLY the currently visible active page(s) so offscreen pre-rendered textures can be evicted by enforce_memory_budget().
     pub fn required_pages(&self) -> Vec<usize> {
         let total = self.page_count;
         if total == 0 {

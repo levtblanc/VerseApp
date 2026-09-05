@@ -29,6 +29,15 @@ impl DiskCache {
     fn build_path(&self, file_path: &Path, page_index: usize, zoom: f32, suffix: &str) -> PathBuf {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         file_path.hash(&mut hasher);
+
+        // Include file modification time and size to auto-invalidate cache on file edit
+        if let Ok(metadata) = fs::metadata(file_path) {
+            metadata.len().hash(&mut hasher);
+            if let Ok(mtime) = metadata.modified() {
+                mtime.hash(&mut hasher);
+            }
+        }
+
         let path_hash = hasher.finish();
         let zoom_int = (zoom * 100.0) as u32;
 

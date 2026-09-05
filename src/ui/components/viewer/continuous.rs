@@ -43,14 +43,9 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         .width(Length::Fixed(left_target_w))
                         .height(Length::Fixed(left_target_h));
 
-                    let (selected_quads, search_quads, active_search_quad) = unsafe {
-                        let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
-                        (
-                            (*mutable_tab).get_selected_quads_for_page(left_page),
-                            (*mutable_tab).get_search_matches_for_page(left_page),
-                            (*mutable_tab).get_active_search_match_for_page(left_page),
-                        )
-                    };
+                    let selected_quads = tab.get_selected_quads_for_page(left_page);
+                    let search_quads = tab.get_search_matches_for_page(left_page);
+                    let active_search_quad = tab.get_active_search_match_for_page(left_page);
 
                     let selection_canvas = Canvas::new(PageSelectionProgram {
                         page_index: left_page,
@@ -91,14 +86,9 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                             .width(Length::Fixed(right_target_w))
                             .height(Length::Fixed(right_target_h));
 
-                        let (selected_quads, search_quads, active_search_quad) = unsafe {
-                            let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
-                            (
-                                (*mutable_tab).get_selected_quads_for_page(right_page),
-                                (*mutable_tab).get_search_matches_for_page(right_page),
-                                (*mutable_tab).get_active_search_match_for_page(right_page),
-                            )
-                        };
+                        let selected_quads = tab.get_selected_quads_for_page(right_page);
+                        let search_quads = tab.get_search_matches_for_page(right_page);
+                        let active_search_quad = tab.get_active_search_match_for_page(right_page);
 
                         let selection_canvas = Canvas::new(PageSelectionProgram {
                             page_index: right_page,
@@ -157,8 +147,8 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             }
         }
 
-        // Iced 0.13 Rule: Horizontal scrollable content MUST use Length::Shrink to avoid panic
-        let (dir, container_w) = if approx_pair_width > 1200.0 {
+        let needs_horizontal = approx_pair_width > tab.viewport_width;
+        let (dir, container_w) = if needs_horizontal {
             (
                 scrollable::Direction::Both {
                     vertical: v_scrollbar,
@@ -187,6 +177,8 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                 Message::ViewportScrolled {
                     tab_id,
                     offset_y: safe_y,
+                    viewport_width: viewport.bounds().width,
+                    viewport_height: viewport.bounds().height,
                 }
             })
             .width(Length::Fill)
@@ -222,14 +214,9 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                         .width(Length::Fixed(target_w))
                         .height(Length::Fixed(target_h));
 
-                    let (selected_quads, search_quads, active_search_quad) = unsafe {
-                        let mutable_tab = tab as *const RuntimeTab as *mut RuntimeTab;
-                        (
-                            (*mutable_tab).get_selected_quads_for_page(page_idx),
-                            (*mutable_tab).get_search_matches_for_page(page_idx),
-                            (*mutable_tab).get_active_search_match_for_page(page_idx),
-                        )
-                    };
+                    let selected_quads = tab.get_selected_quads_for_page(page_idx);
+                    let search_quads = tab.get_search_matches_for_page(page_idx);
+                    let active_search_quad = tab.get_active_search_match_for_page(page_idx);
 
                     let selection_canvas = Canvas::new(PageSelectionProgram {
                         page_index: page_idx,
@@ -267,8 +254,8 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
             }
         }
 
-        // Iced 0.13 Rule: Horizontal scrollable content MUST use Length::Shrink to avoid panic
-        let (dir, container_w) = if approx_page_width > 1200.0 {
+        let needs_horizontal = approx_page_width > tab.viewport_width;
+        let (dir, container_w) = if needs_horizontal {
             (
                 scrollable::Direction::Both {
                     vertical: v_scrollbar,
@@ -297,6 +284,8 @@ pub fn render_continuous_view<'a>(tab: &'a RuntimeTab) -> Element<'a, Message> {
                 Message::ViewportScrolled {
                     tab_id,
                     offset_y: safe_y,
+                    viewport_width: viewport.bounds().width,
+                    viewport_height: viewport.bounds().height,
                 }
             })
             .width(Length::Fill)

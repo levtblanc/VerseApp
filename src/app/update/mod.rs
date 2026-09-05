@@ -27,7 +27,9 @@ impl ReaderApp {
             Message::PageInputSubmitted(tab_id) => self.handle_page_input_submitted(tab_id),
             Message::ChangeZoom(tab_id, zoom) => self.handle_change_zoom(tab_id, zoom),
             Message::ZoomSettled { tab_id, sequence } => self.handle_zoom_settled(tab_id, sequence),
-            Message::ViewportScrolled { tab_id, offset_y } => self.handle_viewport_scrolled(tab_id, offset_y),
+            Message::ViewportScrolled { tab_id, offset_y, viewport_width, viewport_height } => {
+                self.handle_viewport_scrolled(tab_id, offset_y, viewport_width, viewport_height)
+            }
             Message::ScrollSettled { tab_id, sequence } => self.handle_scroll_settled(tab_id, sequence),
             Message::TogglePageLayout(tab_id) => self.handle_toggle_page_layout(tab_id),
             Message::ToggleContinuous(tab_id) => self.handle_toggle_continuous(tab_id),

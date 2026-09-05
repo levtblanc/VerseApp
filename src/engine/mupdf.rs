@@ -15,7 +15,8 @@ pub struct MuPdfBackend {
     total_pages: usize,
     default_dimensions: (f32, f32),
     dimensions_cache: Mutex<HashMap<usize, (f32, f32)>>,
-    doc: Arc<ThreadSafeDocument>,
+    primary_doc: Arc<ThreadSafeDocument>,
+    background_doc: Arc<ThreadSafeDocument>,
     is_image_based: bool,
 }
 
@@ -34,6 +35,7 @@ impl MuPdfBackend {
             "cbz" | "cbr" | "cb7" | "cbt" | "png" | "jpg" | "jpeg" | "webp"
         );
 
+        // 1. Primary document instance for high-priority visible page rendering
         let doc = Document::open(path_str)
             .map_err(|e| format!("MuPDF failed to open '{}': {}", path.display(), e))?;
 
@@ -49,12 +51,22 @@ impl MuPdfBackend {
             (595.0, 842.0)
         };
 
+        let primary_doc = Arc::new(ThreadSafeDocument(Mutex::new(doc)));
+
+        // 2. Secondary isolated document instance for background thumbnails & search tasks
+        let background_doc = if let Ok(bg) = Document::open(path_str) {
+            Arc::new(ThreadSafeDocument(Mutex::new(bg)))
+        } else {
+            primary_doc.clone()
+        };
+
         Ok(Self {
             file_name,
             total_pages,
             default_dimensions,
             dimensions_cache: Mutex::new(HashMap::new()),
-            doc: Arc::new(ThreadSafeDocument(Mutex::new(doc))),
+            primary_doc,
+            background_doc,
             is_image_based,
         })
     }
@@ -101,8 +113,16 @@ impl DocumentBackend for MuPdfBackend {
     }
 
     fn render_page(&self, request: &PageRenderRequest) -> Result<RgbaImage, String> {
+        // High quality visible page renders use the dedicated primary context;
+        // Draft and thumbnail renders use the isolated background context.
+        let target_doc = if request.quality == RenderQuality::High {
+            &self.primary_doc
+        } else {
+            &self.background_doc
+        };
+
         let pixmap = {
-            let guard = self.doc.0.lock().map_err(|_| "Failed to acquire MuPDF lock".to_string())?;
+            let guard = target_doc.0.lock().map_err(|_| "Failed to acquire MuPDF lock".to_string())?;
 
             let page = guard
                 .load_page(request.page_index as i32)
@@ -168,7 +188,7 @@ impl DocumentBackend for MuPdfBackend {
     }
 
     fn table_of_contents(&self) -> Vec<TocItem> {
-        if let Ok(guard) = self.doc.0.lock() {
+        if let Ok(guard) = self.background_doc.0.lock() {
             if let Ok(outlines) = guard.outlines() {
                 return outlines.iter().map(convert_mupdf_outline).collect();
             }
@@ -178,7 +198,8 @@ impl DocumentBackend for MuPdfBackend {
 
     fn extract_text(&self, page_index: usize) -> Vec<TextQuad> {
         let mut quads = Vec::new();
-        if let Ok(guard) = self.doc.0.lock() {
+        // Text extraction runs on the background context so active rendering is never stalled
+        if let Ok(guard) = self.background_doc.0.lock() {
             if let Ok(page) = guard.load_page(page_index as i32) {
                 if let Ok(words) = page.words(TextExtractOptions::default()) {
                     for word in words {

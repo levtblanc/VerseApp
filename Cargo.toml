@@ -1,6 +1,6 @@
 [package]
 name = "Verse"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 
 [dependencies]
@@ -25,8 +25,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [profile.release]
-opt-level = "z"        # Maximize size reduction optimizations
-lto = true             # Full Link-Time Optimization across standard library & crates
-codegen-units = 1      # Single codegen unit for optimal global dead-code elimination
-panic = "abort"        # Eliminate stack unwinding tables
-strip = true           # Automatically strip all debug symbols from output binary
+opt-level = "z"        # Maximize size reduction
+lto = true             # Link-Time Optimization
+codegen-units = 1      # Single codegen unit for dead-code elimination
+panic = "unwind"       # Allows catch_unwind to catch corrupt document panics safely
+strip = true           # Strip debug symbols

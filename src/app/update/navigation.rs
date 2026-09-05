@@ -1,5 +1,7 @@
 use iced::widget::scrollable;
 use iced::Task;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::app::messages::Message;
 use crate::app::state::ReaderApp;
@@ -169,13 +171,24 @@ impl ReaderApp {
         Task::none()
     }
 
-    pub fn handle_viewport_scrolled(&mut self, tab_id: usize, offset_y: f32) -> Task<Message> {
+    pub fn handle_viewport_scrolled(
+        &mut self,
+        tab_id: usize,
+        offset_y: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> Task<Message> {
         let mut tasks = Vec::new();
 
         let should_render = if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             let safe_y = if offset_y.is_finite() { offset_y.max(0.0) } else { 0.0 };
             tab.viewport_y = safe_y;
-
+            if viewport_width.is_finite() && viewport_width > 100.0 {
+                tab.viewport_width = viewport_width;
+            }
+            if viewport_height.is_finite() && viewport_height > 100.0 {
+                tab.viewport_height = viewport_height;
+            }
             if safe_y == 0.0 && tab.current_page > 0 {
                 false
             } else if tab.is_continuous {
@@ -374,6 +387,10 @@ impl ReaderApp {
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 tab.is_search_open = false;
+                // Abort any ongoing search worker
+                if let Some(token) = tab.search_cancel_token.take() {
+                    token.store(true, Ordering::Relaxed);
+                }
             }
         }
         Task::none()
@@ -383,12 +400,23 @@ impl ReaderApp {
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 tab.search_query = query.clone();
+
+                // 1. Cancel previous in-flight search task
+                if let Some(old_token) = tab.search_cancel_token.take() {
+                    old_token.store(true, Ordering::Relaxed);
+                }
+
+                // 2. Create new active cancellation token
+                let new_token = Arc::new(AtomicBool::new(false));
+                tab.search_cancel_token = Some(new_token.clone());
+
                 return spawn_search_task(
                     active_id,
                     tab.backend.clone(),
                     tab.page_count,
                     query,
                     tab.search_match_case,
+                    new_token,
                 );
             }
         }
@@ -409,12 +437,22 @@ impl ReaderApp {
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 tab.search_match_case = !tab.search_match_case;
+
+                // Cancel previous in-flight task
+                if let Some(old_token) = tab.search_cancel_token.take() {
+                    old_token.store(true, Ordering::Relaxed);
+                }
+
+                let new_token = Arc::new(AtomicBool::new(false));
+                tab.search_cancel_token = Some(new_token.clone());
+
                 return spawn_search_task(
                     active_id,
                     tab.backend.clone(),
                     tab.page_count,
                     tab.search_query.clone(),
                     tab.search_match_case,
+                    new_token,
                 );
             }
         }
@@ -465,8 +503,9 @@ impl ReaderApp {
                 let page_base_y = tab.y_offset_for_page(search_match.page_index);
                 let quad_y = search_match.quad.y0 * tab.zoom;
                 let match_center_y = page_base_y + quad_y;
+                let half_screen = (tab.viewport_height / 2.0).max(150.0);
 
-                (match_center_y - 350.0).max(0.0)
+                (match_center_y - half_screen).max(0.0)
             } else {
                 0.0
             };

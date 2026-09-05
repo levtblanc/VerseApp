@@ -45,7 +45,7 @@ impl Action {
             Action::OpenSettings => "Open Settings",
             Action::CloseActiveTab => "Close Active Tab",
             Action::TogglePageLayout => "Toggle Single/Double View",
-            Action::ToggleContinuous => "Toggle Continuous Scrolling",
+            Action::ToggleContinuous => "Toggle Continuous Scrolling (Ctrl+Shift+C)",
             Action::OpenFile => "Open File",
             Action::NextTab => "Next Tab (Ctrl+Tab)",
             Action::PrevTab => "Previous Tab (Ctrl+Shift+Tab)",
@@ -116,7 +116,7 @@ impl Default for AppSettings {
         keybindings.insert(Action::NextPage, KeyBinding::new("Down", false, false, false));
         keybindings.insert(Action::PrevPage, KeyBinding::new("Up", false, false, false));
         keybindings.insert(Action::TogglePageLayout, KeyBinding::new("D", true, false, false));
-        keybindings.insert(Action::ToggleContinuous, KeyBinding::new("C", true, false, false));
+        keybindings.insert(Action::ToggleContinuous, KeyBinding::new("C", true, true, false));
         keybindings.insert(Action::ToggleTheme, KeyBinding::new("T", true, false, false));
         keybindings.insert(Action::OpenSettings, KeyBinding::new("Comma", true, false, false));
 

@@ -11,7 +11,8 @@ pub struct DjVuBackend {
     total_pages: usize,
     default_dimensions: (f32, f32),
     dimensions_cache: Mutex<HashMap<usize, (f32, f32)>>,
-    doc: Mutex<djvu::Document>,
+    primary_doc: Mutex<djvu::Document>,
+    background_doc: Option<Mutex<djvu::Document>>,
 }
 
 impl DjVuBackend {
@@ -30,12 +31,15 @@ impl DjVuBackend {
             (600.0, 800.0)
         };
 
+        let background_doc = djvu::Document::open(path_str).ok().map(Mutex::new);
+
         Ok(Self {
             file_name,
             total_pages,
             default_dimensions,
             dimensions_cache: Mutex::new(HashMap::new()),
-            doc: Mutex::new(doc),
+            primary_doc: Mutex::new(doc),
+            background_doc,
         })
     }
 }
@@ -59,36 +63,47 @@ impl DocumentBackend for DjVuBackend {
     }
 
     fn render_page(&self, request: &PageRenderRequest) -> Result<RgbaImage, String> {
-        let guard = self.doc.lock().map_err(|_| "Failed to acquire DjVu lock".to_string())?;
+        let is_high = request.quality == RenderQuality::High;
 
-        let page = guard.page(request.page_index)
-            .map_err(|e| format!("Failed to load DjVu page {}: {}", request.page_index, e))?;
+        let (pixmap, doc_w, doc_h) = {
+            let guard = if !is_high && self.background_doc.is_some() {
+                self.background_doc.as_ref().unwrap().lock()
+            } else {
+                self.primary_doc.lock()
+            }
+            .map_err(|_| "Failed to acquire DjVu lock".to_string())?;
 
-        let (doc_w, doc_h) = (page.width() as f32, page.height() as f32);
+            let page = guard.page(request.page_index)
+                .map_err(|e| format!("Failed to load DjVu page {}: {}", request.page_index, e))?;
 
-        if let Ok(mut cache_guard) = self.dimensions_cache.lock() {
-            cache_guard.insert(request.page_index, (doc_w, doc_h));
-        }
+            let (w, h) = (page.width() as f32, page.height() as f32);
 
-        let quality_scale = match request.quality {
-            RenderQuality::Fuzzy => 0.20,
-            RenderQuality::Draft => 0.50,
-            RenderQuality::High => 1.25, // Reverted to 1.25x scale
+            if let Ok(mut cache_guard) = self.dimensions_cache.lock() {
+                cache_guard.insert(request.page_index, (w, h));
+            }
+
+            let pixmap = page.render()
+                .map_err(|e| format!("DjVu rendering error: {}", e))?;
+
+            (pixmap, w, h)
         };
-
-        let target_zoom = (request.zoom * quality_scale).clamp(0.1, 2.5);
-        let (max_w, max_h) = request.max_dimensions.unwrap_or((3840, 3840)); // Reverted to 3840x3840
-
-        let target_w = ((doc_w * target_zoom) as u32).clamp(60, max_w);
-        let target_h = ((doc_h * target_zoom) as u32).clamp(60, max_h);
-
-        let pixmap = page.render()
-            .map_err(|e| format!("DjVu rendering error: {}", e))?;
 
         let src_w = pixmap.width as u32;
         let src_h = pixmap.height as u32;
         let raw_rgba = RgbaImage::from_raw(src_w, src_h, pixmap.data)
             .ok_or_else(|| "Failed to create RGBA buffer for DjVu page".to_string())?;
+
+        let quality_scale = match request.quality {
+            RenderQuality::Fuzzy => 0.20,
+            RenderQuality::Draft => 0.50,
+            RenderQuality::High => 1.25,
+        };
+
+        let target_zoom = (request.zoom * quality_scale).clamp(0.1, 2.5);
+        let (max_w, max_h) = request.max_dimensions.unwrap_or((3840, 3840));
+
+        let target_w = ((doc_w * target_zoom) as u32).clamp(60, max_w);
+        let target_h = ((doc_h * target_zoom) as u32).clamp(60, max_h);
 
         let filter = match request.quality {
             RenderQuality::Fuzzy | RenderQuality::Draft => FilterType::Nearest,

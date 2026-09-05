@@ -7,6 +7,7 @@ use crate::app::state::ReaderApp;
 use crate::engine::traits::{DocumentBackend, PageRenderRequest, RenderQuality};
 use crate::models::disk_cache::DiskCache;
 use crate::models::workspace::SearchMatch;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 static GLOBAL_DISK_CACHE: LazyLock<DiskCache> = LazyLock::new(DiskCache::new);
 const MAX_CONCURRENT_THUMBNAILS: usize = 4;
@@ -21,6 +22,7 @@ pub fn spawn_search_task(
     page_count: usize,
     query: String,
     match_case: bool,
+    cancel_token: Arc<AtomicBool>,
 ) -> Task<Message> {
     Task::perform(
         async move {
@@ -30,6 +32,7 @@ pub fn spawn_search_task(
             }
 
             let query_for_error = query_trimmed.clone();
+            let token = cancel_token.clone();
 
             tokio::task::spawn_blocking(move || {
                 let mut matches = Vec::new();
@@ -40,6 +43,11 @@ pub fn spawn_search_task(
                 };
 
                 for page_idx in 0..page_count {
+                    // Check if a newer search query canceled this task
+                    if token.load(Ordering::Relaxed) {
+                        return (tab_id, query_trimmed, Vec::new());
+                    }
+
                     let quads = backend.extract_text(page_idx);
                     for quad in quads {
                         let quad_text = if match_case {

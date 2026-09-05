@@ -44,7 +44,7 @@ pub enum Message {
     ToggleSidePanelPin(usize),
     SetSidePanelTab(usize, SidePanelTab),
 
-    ViewportScrolled { tab_id: usize, offset_y: f32 },
+    ViewportScrolled { tab_id: usize, offset_y: f32, viewport_width: f32, viewport_height: f32 },
     SidePanelScrolled { tab_id: usize, offset_y: f32 },
 
     ScrollSettled { tab_id: usize, sequence: usize },
