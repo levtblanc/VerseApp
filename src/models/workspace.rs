@@ -5,7 +5,7 @@ use std::time::Instant;
 use iced::widget::image;
 use crate::engine::traits::{DocumentBackend, RenderQuality, TextQuad, TocItem};
 use crate::models::session::{PageLayout, SidePanelTab};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 const MAX_THUMBNAIL_CACHE_SIZE: usize = 30;
 const TAB_TEXTURE_RAM_BUDGET_BYTES: usize = 16 * 1024 * 1024;

@@ -97,12 +97,12 @@ impl ReaderApp {
 
         let base_layout: Element<Message> = if self.is_tab_bar_visible {
             let top_header = row![
-                render_tab_bar(&self.tabs, active_id, self.dragged_tab_id),
+                render_tab_bar(&self.tabs, active_id, self.dragged_tab_id, self.settings.theme),
                 settings_btn
             ]
             .spacing(8)
             .padding(iced::Padding {
-                top: 8.0,
+                top: 6.0,
                 right: 10.0,
                 bottom: 2.0,
                 left: 10.0,
